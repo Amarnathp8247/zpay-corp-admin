@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=5174",
+    "dev": "vite",
+    "dev:local": "vite --mode local",
+    "dev:live": "VITE_API_BASE_URL=https://api.gzonic.com vite",
+    "dev:network": "vite --host 0.0.0.0",
     "build": "vite build",
-    "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
