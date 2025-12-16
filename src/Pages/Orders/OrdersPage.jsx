@@ -1,5 +1,5 @@
 // src/pages/OrdersPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -40,60 +40,38 @@ import {
   StepLabel,
   StepContent,
   Avatar,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar,
   Collapse,
-  Switch,
-  FormControlLabel,
   InputAdornment
 } from '@mui/material';
 import {
   Search as SearchIcon,
   FilterList as FilterIcon,
   Refresh as RefreshIcon,
-  Visibility as ViewIcon,
   Cancel as CancelIcon,
   Receipt as ReceiptIcon,
   CreditCard as CreditCardIcon,
   QrCode as QrCodeIcon,
   Download as DownloadIcon,
-  Share as ShareIcon,
   Print as PrintIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
-  Person as PersonIcon,
-  Business as BusinessIcon,
-  AttachMoney as MoneyIcon,
-  Inventory as InventoryIcon,
-  BarChart as ChartIcon,
-  Timeline as TimelineIcon,
+  AccountBalanceWallet as WalletIcon,
   Warning as WarningIcon,
   CheckCircle as CheckIcon,
   Error as ErrorIcon,
-  Info as InfoIcon,
+  Timeline as TimelineIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
-  CalendarToday as CalendarIcon,
-  AccountBalanceWallet as WalletIcon,
-  LocalOffer as DiscountIcon,
-  Language as LanguageIcon,
   VerifiedUser as VerifiedIcon,
-  Lock as LockIcon,
-  Security as SecurityIcon,
-  Speed as SpeedIcon
+  Visibility as ViewIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { format, subDays, startOfMonth, endOfMonth, isValid as isValidDate } from 'date-fns';
+import { format, isValid as isValidDate } from 'date-fns';
 import ResellerOrderService from '../../services/order.service';
 import { useSnackbar } from 'notistack';
 import './OrdersPage.css';
-
-// CSS file might not exist, create a basic one if needed
-// Create OrdersPage.css with minimal styles if it doesn't exist
 
 const isValidUUID = (id) => {
   if (!id) return false;
@@ -119,1133 +97,238 @@ const STATUS_ICONS = {
   FAILED: <ErrorIcon />
 };
 
-// Expandable Order Row Component
-const ExpandableOrderRow = ({ order, onViewDetails, onCancelOrder }) => {
-  const [expanded, setExpanded] = useState(false);
-  
-  // Format order for display
-  const formattedOrder = React.useMemo(() => {
-    return ResellerOrderService.formatOrderSummary(order) || order;
-  }, [order]);
-  
-  return (
-    <React.Fragment>
-      <TableRow hover>
-        <TableCell>
-          <IconButton 
-            size="small" 
-            onClick={() => setExpanded(!expanded)}
-            aria-label={expanded ? "Collapse order details" : "Expand order details"}
-          >
-            {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          </IconButton>
-        </TableCell>
-        <TableCell>
-          <Box display="flex" alignItems="center">
-            <ReceiptIcon sx={{ mr: 1, color: 'primary.main' }} />
-            <Box>
-              <Typography variant="body2" fontWeight="bold">
-                {formattedOrder.orderNumber || 'N/A'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {formattedOrder.invoiceId || 'No invoice'}
-              </Typography>
-            </Box>
-          </Box>
-        </TableCell>
-        <TableCell>
-          <Chip
-            icon={STATUS_ICONS[formattedOrder.status]}
-            label={formattedOrder.status}
-            color={STATUS_COLORS[formattedOrder.status]}
-            size="small"
-            variant="outlined"
-          />
-        </TableCell>
-        <TableCell>
-          {formattedOrder.createdAt ? (
-            <>
-              {new Date(formattedOrder.createdAt).toLocaleDateString()}
-              <Typography variant="caption" display="block" color="text.secondary">
-                {new Date(formattedOrder.createdAt).toLocaleTimeString()}
-              </Typography>
-            </>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              N/A
-            </Typography>
-          )}
-        </TableCell>
-        <TableCell>
-          <Typography variant="body2" fontWeight="bold">
-            {ResellerOrderService.formatPrice(
-              formattedOrder.totalAmount, 
-              formattedOrder.currency
-            )}
-          </Typography>
-          {formattedOrder.discountApplied > 0 && (
-            <Typography variant="caption" color="success.main">
-              Saved {ResellerOrderService.formatPrice(
-                formattedOrder.discountApplied, 
-                formattedOrder.currency
-              )}
-            </Typography>
-          )}
-        </TableCell>
-        <TableCell>
-          <Box display="flex" alignItems="center">
-            <InventoryIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            <Typography variant="body2">
-              {formattedOrder.itemCount || 0} item{formattedOrder.itemCount !== 1 ? 's' : ''}
-            </Typography>
-          </Box>
-          <Typography variant="caption" color="text.secondary">
-            {formattedOrder.voucherCount || 0} voucher{formattedOrder.voucherCount !== 1 ? 's' : ''}
-          </Typography>
-        </TableCell>
-        <TableCell>
-          <Box display="flex" gap={1}>
-            <Tooltip title="View Details">
-              <IconButton
-                size="small"
-                color="primary"
-                onClick={() => onViewDetails(formattedOrder)}
-                aria-label={`View order ${formattedOrder.orderNumber}`}
-              >
-                <ViewIcon />
-              </IconButton>
-            </Tooltip>
-            {ResellerOrderService.canCancelOrder(formattedOrder) && (
-              <Tooltip title="Cancel Order">
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => onCancelOrder(formattedOrder)}
-                  aria-label={`Cancel order ${formattedOrder.orderNumber}`}
-                >
-                  <CancelIcon />
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip title="Download Invoice">
-              <IconButton 
-                size="small" 
-                color="secondary"
-                aria-label={`Download invoice for order ${formattedOrder.orderNumber}`}
-              >
-                <DownloadIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </TableCell>
-      </TableRow>
-      <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
-          <Collapse in={expanded} timeout="auto" unmountOnExit>
-            <Box sx={{ margin: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                Order Items
-              </Typography>
-              {formattedOrder.items && formattedOrder.items.length > 0 ? (
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Product</TableCell>
-                      <TableCell>Denomination</TableCell>
-                      <TableCell align="right">Quantity</TableCell>
-                      <TableCell align="right">Unit Price</TableCell>
-                      <TableCell align="right">Total</TableCell>
-                      <TableCell>Vouchers</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {ResellerOrderService.formatOrderItems(formattedOrder.items).map((item) => (
-                      <TableRow key={item.id || `${item.productId}-${item.denominationId}`}>
-                        <TableCell>
-                          <Box display="flex" alignItems="center">
-                            {item.productImage && (
-                              <Avatar
-                                src={item.productImage}
-                                sx={{ width: 40, height: 40, mr: 2 }}
-                                alt={item.productName}
-                              />
-                            )}
-                            <Box>
-                              <Typography variant="body2">
-                                {item.productName}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                SKU: {item.product?.sku || 'N/A'}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={ResellerOrderService.formatPrice(
-                              item.denominationAmount,
-                              formattedOrder.currency
-                            )}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography fontWeight="bold">
-                            {item.quantity}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          {ResellerOrderService.formatPrice(item.unitPrice, formattedOrder.currency)}
-                        </TableCell>
-                        <TableCell align="right" fontWeight="bold">
-                          {ResellerOrderService.formatPrice(item.totalPrice, formattedOrder.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <Box display="flex" flexWrap="wrap" gap={0.5}>
-                            {item.vouchers?.slice(0, 3).map((voucher) => (
-                              <Chip
-                                key={voucher.id}
-                                label={voucher.code?.substring(0, 8) || 'N/A'}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                              />
-                            ))}
-                            {item.vouchers?.length > 3 && (
-                              <Chip
-                                label={`+${item.vouchers.length - 3} more`}
-                                size="small"
-                              />
-                            )}
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <Typography variant="body2" color="text.secondary" align="center" py={2}>
-                  No items found
-                </Typography>
-              )}
-              <Box mt={2} display="flex" justifyContent="space-between">
-                <Box>
-                  {formattedOrder.customerEmail && (
-                    <Box display="flex" alignItems="center" mb={0.5}>
-                      <EmailIcon sx={{ mr: 1, fontSize: 16 }} />
-                      <Typography variant="body2">{formattedOrder.customerEmail}</Typography>
-                    </Box>
-                  )}
-                  {formattedOrder.customerPhone && (
-                    <Box display="flex" alignItems="center">
-                      <PhoneIcon sx={{ mr: 1, fontSize: 16 }} />
-                      <Typography variant="body2">{formattedOrder.customerPhone}</Typography>
-                    </Box>
-                  )}
-                </Box>
-                <Button
-                  size="small"
-                  startIcon={<ReceiptIcon />}
-                  onClick={() => onViewDetails(formattedOrder)}
-                >
-                  View Full Details
-                </Button>
-              </Box>
-            </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
-    </React.Fragment>
-  );
-};
-
-// Order Details Modal
-const OrderDetailsModal = ({ open, order, onClose, onCancel }) => {
-  const [activeTab, setActiveTab] = useState(0);
+// Expandable Order Row Component - UPDATED
+const ExpandableOrderRow = ({ order, onViewDetails, onCancelOrder, expandedOrderId }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [orderDetails, setOrderDetails] = useState(null);
-  const [vouchers, setVouchers] = useState([]);
-  const { enqueueSnackbar } = useSnackbar();
-
-  useEffect(() => {
-    if (open && order) {
-      fetchOrderDetails();
-    } else {
-      // Reset state when modal closes
-      setOrderDetails(null);
-      setVouchers([]);
-      setActiveTab(0);
-    }
-  }, [open, order]);
-
-  const fetchOrderDetails = async () => {
+  
+  // Safe format function - FIXED VERSION
+  const formatOrderSummary = (order) => {
+    if (!order) return null;
+    
     try {
-      setLoading(true);
-      
-      console.log('🔍 Fetching order details for:', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        isUUID: isValidUUID(order.id)
-      });
-      
-      let result;
-      try {
-        // Try to get order by ID if it's a valid UUID
-        if (order.id && isValidUUID(order.id)) {
-          result = await ResellerOrderService.getOrderById(order.id);
-        } else {
-          // Otherwise, fetch by order number
-          throw new Error('Invalid order ID format');
-        }
-      } catch (idError) {
-        console.warn('Failed to fetch by ID, trying by order number:', idError.message);
-        
-        // If ID fails or is invalid, try to fetch by order number
-        if (order.orderNumber) {
-          const ordersResult = await ResellerOrderService.getOrders({
-            orderNumber: order.orderNumber,
-            limit: 1
-          });
-          
-          if (ordersResult.success && ordersResult.orders.length > 0) {
-            const foundOrder = ordersResult.orders[0];
-            result = {
-              success: true,
-              order: foundOrder
-            };
-          } else {
-            throw new Error('Order not found');
-          }
-        } else {
-          throw idError;
-        }
-      }
-      
-      if (result.success) {
-        const formattedOrder = result.order;
-        setOrderDetails(formattedOrder);
-        // Extract vouchers from order items
-        const allVouchers = formattedOrder.items?.flatMap(item => 
-          item.vouchers?.map(v => ({
-            ...v,
-            productName: item.productName
-          })) || []
-        ) || [];
-        setVouchers(allVouchers);
-      } else {
-        throw new Error(result.message || 'Failed to fetch order');
+      // Try to use ResellerOrderService.formatOrderSummary if it exists
+      if (ResellerOrderService.formatOrderSummary) {
+        const summary = ResellerOrderService.formatOrderSummary(order);
+        if (summary) return summary;
       }
     } catch (error) {
-      console.error('❌ Fetch order details error:', error);
-      enqueueSnackbar(error.message, { variant: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancelOrder = async () => {
-    try {
-      const confirmed = window.confirm(
-        'Are you sure you want to cancel this order? This action cannot be undone.'
-      );
-      if (!confirmed) return;
-
-      const result = await ResellerOrderService.cancelOrder(order.id);
-      if (result.success) {
-        enqueueSnackbar('Order cancelled successfully', { variant: 'success' });
-        onClose();
-        if (onCancel) onCancel();
-      }
-    } catch (error) {
-      enqueueSnackbar(error.message, { variant: 'error' });
-    }
-  };
-
-  const handleExportVouchers = () => {
-    if (vouchers.length === 0) {
-      enqueueSnackbar('No vouchers to export', { variant: 'info' });
-      return;
+      console.warn('Error using ResellerOrderService.formatOrderSummary, using fallback:', error);
     }
     
-    const csvContent = vouchers
-      .map(v => `${v.code || ''},${v.pin || ''},${v.serial || ''},${v.status || ''},${v.productName || ''}`)
-      .join('\n');
-    const blob = new Blob([`Code,PIN,Serial,Status,Product\n${csvContent}`], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vouchers_${order.orderNumber}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    // Fallback local implementation with type safety
+    try {
+      const items = order.items?.map(item => ({
+        productName: item.product?.name || 'Unknown Product',
+        denominationAmount: item.denomination?.amount || item.unitPrice || 0,
+        quantity: item.quantity || 0,
+        unitPrice: item.unitPrice || 0,
+        totalPrice: item.totalPrice || 0,
+        currency: item.currency?.code || 'USD'
+      })) || [];
+
+      const totalItems = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      
+      // Safely calculate totalAmount
+      let totalAmount = order.totalPrice || 
+                       items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+      
+      // Ensure totalAmount is a number
+      if (typeof totalAmount === 'string') {
+        totalAmount = parseFloat(totalAmount);
+      }
+      
+      if (isNaN(totalAmount)) {
+        totalAmount = 0;
+      }
+      
+      const currency = order.currency?.code || 
+                      order.currencyCode || 
+                      order.currencyId?.code || 
+                      'USD';
+      
+      return {
+        orderId: order.id || order.orderId,
+        invoiceId: order.invoiceId || order.orderNumber,
+        status: order.status || 'UNKNOWN',
+        totalAmount: Number(totalAmount.toFixed(2)),
+        totalItems,
+        items,
+        currency,
+        createdAt: order.createdAt || new Date().toISOString(),
+        updatedAt: order.updatedAt || new Date().toISOString(),
+        canCancel: ['PENDING', 'PROCESSING'].includes(order.status),
+        formattedTotal: ResellerOrderService.formatPrice ? 
+          ResellerOrderService.formatPrice(totalAmount, currency) :
+          `${currency} ${totalAmount.toFixed(2)}`
+      };
+    } catch (error) {
+      console.error('Error formatting order summary:', error);
+      // Return a safe default
+      return {
+        orderId: order?.id || order?.orderId || 'N/A',
+        invoiceId: order?.invoiceId || order?.orderNumber || 'N/A',
+        status: order?.status || 'UNKNOWN',
+        totalAmount: 0,
+        totalItems: 0,
+        items: [],
+        currency: 'USD',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        canCancel: false,
+        formattedTotal: '$0.00'
+      };
+    }
+  };
+
+  const orderSummary = useMemo(() => {
+    return formatOrderSummary(order);
+  }, [order]);
+
+  const handleViewDetails = () => {
+    if (onViewDetails) {
+      onViewDetails(order);
+    }
+  };
+
+  const handleCancel = () => {
+    if (onCancelOrder) {
+      onCancelOrder(order);
+    }
   };
 
   if (!order) return null;
 
-  const displayOrder = orderDetails || order;
-  const timeline = ResellerOrderService.getOrderTimeline(displayOrder);
-
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      scroll="paper"
-      aria-labelledby="order-details-dialog"
-    >
-      <DialogTitle id="order-details-dialog">
-        <Box display="flex" justifyContent="space-between" alignItems="center">
+    <>
+      <TableRow hover>
+        <TableCell>
+          <IconButton
+            size="small"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          </IconButton>
+        </TableCell>
+        <TableCell>
           <Box>
-            <Typography variant="h6">
-              Order {displayOrder.orderNumber || 'N/A'}
+            <Typography variant="body2" fontWeight="bold">
+              {order.orderNumber || `Order #${order.id?.substring(0, 8) || 'N/A'}`}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Invoice: {displayOrder.invoiceId || 'No invoice'}
+            <Typography variant="caption" color="text.secondary">
+              Invoice: {order.invoiceId || 'No invoice'}
             </Typography>
           </Box>
+        </TableCell>
+        <TableCell>
           <Chip
-            icon={STATUS_ICONS[displayOrder.status]}
-            label={displayOrder.status}
-            color={STATUS_COLORS[displayOrder.status]}
+            icon={STATUS_ICONS[order.status] || <WarningIcon />}
+            label={order.status || 'UNKNOWN'}
+            color={STATUS_COLORS[order.status] || 'default'}
+            size="small"
           />
-        </Box>
-      </DialogTitle>
-      
-      <Tabs 
-        value={activeTab} 
-        onChange={(e, val) => setActiveTab(val)}
-        variant="scrollable"
-        scrollButtons="auto"
-      >
-        <Tab label="Overview" />
-        <Tab label="Items" />
-        <Tab label="Vouchers" />
-        <Tab label="Timeline" />
-        <Tab label="Payment" />
-      </Tabs>
-
-      <DialogContent dividers>
-        {loading ? (
-          <Box display="flex" justifyContent="center" p={3}>
-            <CircularProgress />
+        </TableCell>
+        <TableCell>
+          {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'}
+        </TableCell>
+        <TableCell>
+          {ResellerOrderService.formatPrice ? 
+            ResellerOrderService.formatPrice(
+              order.totalPrice || 0, 
+              order.currency || 
+              order.currencyCode || 
+              order.currencyId?.code || 
+              'USD'
+            ) :
+            `$${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}`
+          }
+        </TableCell>
+        <TableCell>
+          {order.itemCount || order.items?.length || 0}
+        </TableCell>
+        <TableCell>
+          <Box display="flex" gap={1}>
+            <Tooltip title="View Details">
+              <IconButton size="small" onClick={handleViewDetails}>
+                <ViewIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {order.status && ['PENDING', 'PROCESSING'].includes(order.status) && (
+              <Tooltip title="Cancel Order">
+                <IconButton size="small" onClick={handleCancel}>
+                  <CancelIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
-        ) : (
-          <>
-            {activeTab === 0 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>
-                        Order Summary
-                      </Typography>
-                      <Box display="flex" justifyContent="space-between" mb={1}>
-                        <Typography color="text.secondary">Subtotal:</Typography>
-                        <Typography fontWeight="bold">
-                          {ResellerOrderService.formatPrice(
-                            displayOrder.pricingSummary?.subtotal || displayOrder.totalAmount,
-                            displayOrder.currency
-                          )}
-                        </Typography>
-                      </Box>
-                      <Box display="flex" justifyContent="space-between" mb={1}>
-                        <Typography color="text.secondary">Discount:</Typography>
-                        <Typography color="success.main" fontWeight="bold">
-                          -{ResellerOrderService.formatPrice(
-                            displayOrder.pricingSummary?.totalDiscount || displayOrder.discountApplied || 0,
-                            displayOrder.currency
-                          )}
-                        </Typography>
-                      </Box>
-                      <Divider sx={{ my: 1 }} />
-                      <Box display="flex" justifyContent="space-between" mb={2}>
-                        <Typography variant="h6">Total:</Typography>
-                        <Typography variant="h6" color="primary">
-                          {ResellerOrderService.formatPrice(
-                            displayOrder.totalAmount, 
-                            displayOrder.currency
-                          )}
-                        </Typography>
-                      </Box>
-                      
-                      <Box display="flex" alignItems="center" mb={2}>
-                        <WalletIcon sx={{ mr: 1 }} />
-                        <Typography variant="body2">
-                          Paid from {displayOrder.currency || 'USD'} Wallet
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>
-                        Customer Details
-                      </Typography>
-                      {displayOrder.customerEmail && (
-                        <Box display="flex" alignItems="center" mb={1}>
-                          <EmailIcon sx={{ mr: 1, fontSize: 16 }} />
-                          <Typography variant="body2">{displayOrder.customerEmail}</Typography>
-                        </Box>
-                      )}
-                      {displayOrder.customerPhone && (
-                        <Box display="flex" alignItems="center" mb={1}>
-                          <PhoneIcon sx={{ mr: 1, fontSize: 16 }} />
-                          <Typography variant="body2">{displayOrder.customerPhone}</Typography>
-                        </Box>
-                      )}
-                      {displayOrder.notes && (
-                        <Box mt={2}>
-                          <Typography variant="subtitle2" gutterBottom>
-                            Notes:
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {displayOrder.notes}
-                          </Typography>
-                        </Box>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>
-                        Quick Actions
-                      </Typography>
+        </TableCell>
+      </TableRow>
+      
+      {isExpanded && (
+        <TableRow>
+          <TableCell colSpan={7} style={{ paddingTop: 0, paddingBottom: 0 }}>
+            <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+              <Box sx={{ margin: 1 }}>
+                <Card variant="outlined">
+                  <CardContent>
+                    {loading ? (
+                      <CircularProgress size={20} />
+                    ) : orderSummary ? (
                       <Grid container spacing={2}>
-                        <Grid item>
-                          <Button
-                            variant="outlined"
-                            startIcon={<PrintIcon />}
-                            onClick={() => window.print()}
-                          >
-                            Print Invoice
-                          </Button>
+                        <Grid item xs={12} md={6}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Order Summary
+                          </Typography>
+                          <Typography variant="body2">
+                            Items: {orderSummary.totalItems}
+                          </Typography>
+                          <Typography variant="body2">
+                            Total: {orderSummary.formattedTotal}
+                          </Typography>
+                          <Typography variant="body2">
+                            Status: {orderSummary.status}
+                          </Typography>
                         </Grid>
-                        <Grid item>
-                          <Button
-                            variant="outlined"
-                            startIcon={<DownloadIcon />}
-                            onClick={handleExportVouchers}
-                            disabled={vouchers.length === 0}
-                          >
-                            Export Vouchers
-                          </Button>
-                        </Grid>
-                        <Grid item>
-                          <Button
-                            variant="outlined"
-                            startIcon={<EmailIcon />}
-                            onClick={() => {
-                              if (!displayOrder.customerEmail) {
-                                enqueueSnackbar('No customer email available', { variant: 'warning' });
-                                return;
-                              }
-                              const subject = `Order ${displayOrder.orderNumber} - Voucher Details`;
-                              const body = `Order Number: ${displayOrder.orderNumber}\nInvoice: ${displayOrder.invoiceId}\n\nVoucher Details:\n\n${
-                                vouchers.map(v => `Code: ${v.code}\nPIN: ${v.pin || 'N/A'}\nProduct: ${v.productName}\n`).join('\n')
-                              }`;
-                              window.location.href = `mailto:${displayOrder.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                            }}
-                            disabled={!displayOrder.customerEmail || vouchers.length === 0}
-                          >
-                            Email Vouchers
-                          </Button>
-                        </Grid>
-                        {ResellerOrderService.canCancelOrder(displayOrder) && (
-                          <Grid item>
+                        <Grid item xs={12} md={6}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Actions
+                          </Typography>
+                          <Box display="flex" gap={1} mt={1}>
                             <Button
+                              size="small"
                               variant="outlined"
-                              color="error"
-                              startIcon={<CancelIcon />}
-                              onClick={handleCancelOrder}
+                              startIcon={<ViewIcon />}
+                              onClick={handleViewDetails}
                             >
-                              Cancel Order
+                              View Full Details
                             </Button>
-                          </Grid>
-                        )}
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
-            )}
-
-            {activeTab === 1 && (
-              <Box>
-                <Typography variant="h6" gutterBottom>
-                  Order Items ({displayOrder.itemCount || 0})
-                </Typography>
-                {displayOrder.items && displayOrder.items.length > 0 ? (
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Product</TableCell>
-                          <TableCell>Denomination</TableCell>
-                          <TableCell align="right">Quantity</TableCell>
-                          <TableCell align="right">Unit Price</TableCell>
-                          <TableCell align="right">Discount</TableCell>
-                          <TableCell align="right">Total</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {ResellerOrderService.formatOrderItems(displayOrder.items).map((item) => (
-                          <TableRow key={item.id || `${item.productId}-${item.denominationId}`} hover>
-                            <TableCell>
-                              <Box display="flex" alignItems="center">
-                                {item.productImage && (
-                                  <Avatar
-                                    src={item.productImage}
-                                    sx={{ width: 40, height: 40, mr: 2 }}
-                                    alt={item.productName}
-                                  />
-                                )}
-                                <Box>
-                                  <Typography variant="body2" fontWeight="bold">
-                                    {item.productName}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    SKU: {item.product?.sku || 'N/A'}
-                                  </Typography>
-                                </Box>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              <Chip
-                                label={ResellerOrderService.formatPrice(
-                                  item.denominationAmount,
-                                  displayOrder.currency
-                                )}
-                                size="small"
-                                variant="outlined"
-                              />
-                            </TableCell>
-                            <TableCell align="right">
-                              <Typography fontWeight="bold">
-                                {item.quantity}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="right">
-                              {ResellerOrderService.formatPrice(item.unitPrice, displayOrder.currency)}
-                              {item.originalUnitPrice > item.unitPrice && (
-                                <Typography variant="caption" display="block" color="text.secondary">
-                                  <s>{ResellerOrderService.formatPrice(item.originalUnitPrice, displayOrder.currency)}</s>
-                                </Typography>
-                              )}
-                            </TableCell>
-                            <TableCell align="right">
-                              {item.discountApplied > 0 && (
-                                <>
-                                  <Typography variant="body2" color="success.main">
-                                    -{ResellerOrderService.formatPrice(item.discountApplied, displayOrder.currency)}
-                                  </Typography>
-                                  <Typography variant="caption" color="success.main">
-                                    {ResellerOrderService.calculateDiscountPercentage(
-                                      item.originalUnitPrice || item.unitPrice + item.discountApplied,
-                                      item.unitPrice
-                                    )}%
-                                  </Typography>
-                                </>
-                              )}
-                            </TableCell>
-                            <TableCell align="right" fontWeight="bold">
-                              {ResellerOrderService.formatPrice(item.totalPrice, displayOrder.currency)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" align="center" py={4}>
-                    No items found in this order
-                  </Typography>
-                )}
-              </Box>
-            )}
-
-            {activeTab === 2 && (
-              <Box>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                  <Typography variant="h6">
-                    Vouchers ({vouchers.length})
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    startIcon={<DownloadIcon />}
-                    onClick={handleExportVouchers}
-                    size="small"
-                    disabled={vouchers.length === 0}
-                  >
-                    Export All
-                  </Button>
-                </Box>
-                {vouchers.length > 0 ? (
-                  <Grid container spacing={2}>
-                    {vouchers.map((voucher) => (
-                      <Grid item xs={12} sm={6} md={4} key={voucher.id}>
-                        <Card variant="outlined">
-                          <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
-                              <Typography variant="body2" fontWeight="bold" fontFamily="monospace">
-                                {voucher.code || 'N/A'}
-                              </Typography>
-                              <Chip
-                                label={voucher.status}
-                                size="small"
-                                color={
-                                  voucher.status === 'DELIVERED' ? 'success' :
-                                  voucher.status === 'USED' ? 'warning' :
-                                  voucher.status === 'EXPIRED' ? 'error' : 'default'
-                                }
-                              />
-                            </Box>
-                            {voucher.productName && (
-                              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-                                Product: {voucher.productName}
-                              </Typography>
-                            )}
-                            {voucher.pin && (
-                              <Typography variant="body2" fontFamily="monospace" gutterBottom>
-                                PIN: {voucher.pin}
-                              </Typography>
-                            )}
-                            {voucher.serial && (
-                              <Typography variant="caption" color="text.secondary" display="block">
-                                Serial: {voucher.serial}
-                              </Typography>
-                            )}
-                            {voucher.expiresAt && (
-                              <Typography variant="caption" color="text.secondary" display="block">
-                                Expires: {new Date(voucher.expiresAt).toLocaleDateString()}
-                              </Typography>
-                            )}
-                            <Box mt={1}>
+                            {orderSummary.canCancel && (
                               <Button
                                 size="small"
-                                startIcon={<QrCodeIcon />}
-                                onClick={() => {
-                                  if (!voucher.code) return;
-                                  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(voucher.code)}`;
-                                  window.open(qrUrl, '_blank', 'noopener,noreferrer');
-                                }}
-                                disabled={!voucher.code}
+                                variant="outlined"
+                                color="error"
+                                startIcon={<CancelIcon />}
+                                onClick={handleCancel}
                               >
-                                QR Code
+                                Cancel Order
                               </Button>
-                            </Box>
-                          </CardContent>
-                        </Card>
+                            )}
+                          </Box>
+                        </Grid>
                       </Grid>
-                    ))}
-                  </Grid>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" align="center" py={4}>
-                    No vouchers found for this order
-                  </Typography>
-                )}
-              </Box>
-            )}
-
-            {activeTab === 3 && (
-              <Box>
-                <Typography variant="h6" gutterBottom>
-                  Order Timeline
-                </Typography>
-                {timeline.length > 0 ? (
-                  <Stepper orientation="vertical">
-                    {timeline.map((event, index) => (
-                      <Step key={index} active>
-                        <StepLabel>
-                          <Typography variant="body1" fontWeight="bold">
-                            {event.event}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {new Date(event.timestamp).toLocaleString()}
-                          </Typography>
-                        </StepLabel>
-                        <StepContent>
-                          <Typography variant="body2">
-                            {event.description}
-                          </Typography>
-                        </StepContent>
-                      </Step>
-                    ))}
-                  </Stepper>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" align="center" py={4}>
-                    No timeline events found
-                  </Typography>
-                )}
-              </Box>
-            )}
-
-            {activeTab === 4 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>
-                        Payment Information
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        No additional information available
                       </Typography>
-                      <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Payment Method
-                          </Typography>
-                          <Typography variant="body1">
-                            {displayOrder.currency || 'USD'} Wallet
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Transaction ID
-                          </Typography>
-                          <Typography variant="body1" fontFamily="monospace">
-                            {displayOrder.transactions?.[0]?.reference || displayOrder.transactionId || 'N/A'}
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Payment Status
-                          </Typography>
-                          <Chip
-                            label={displayOrder.paymentStatus || "COMPLETED"}
-                            color="success"
-                            size="small"
-                            icon={<VerifiedIcon />}
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            Payment Date
-                          </Typography>
-                          <Typography variant="body1">
-                            {displayOrder.createdAt ? 
-                              new Date(displayOrder.createdAt).toLocaleString() : 
-                              'N/A'
-                            }
-                          </Typography>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {displayOrder.transactions?.map((transaction) => (
-                  <Grid item xs={12} key={transaction.id}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="h6" gutterBottom>
-                          Transaction Details
-                        </Typography>
-                        <Grid container spacing={2}>
-                          <Grid item xs={12} md={4}>
-                            <Typography variant="subtitle2" color="text.secondary">
-                              Amount
-                            </Typography>
-                            <Typography variant="h6" color="primary">
-                              {ResellerOrderService.formatPrice(
-                                transaction.amount, 
-                                displayOrder.currency
-                              )}
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12} md={4}>
-                            <Typography variant="subtitle2" color="text.secondary">
-                              Type
-                            </Typography>
-                            <Chip
-                              label={transaction.type}
-                              color={transaction.type === 'DEBIT' ? 'error' : 'success'}
-                              size="small"
-                            />
-                          </Grid>
-                          <Grid item xs={12} md={4}>
-                            <Typography variant="subtitle2" color="text.secondary">
-                              Status
-                            </Typography>
-                            <Chip
-                              label={transaction.status}
-                              color={transaction.status === 'SUCCESS' ? 'success' : 'warning'}
-                              size="small"
-                            />
-                          </Grid>
-                          <Grid item xs={12}>
-                            <Typography variant="subtitle2" color="text.secondary">
-                              Reason
-                            </Typography>
-                            <Typography variant="body2">
-                              {transaction.reason || 'Order payment'}
-                            </Typography>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
-            )}
-          </>
-        )}
-      </DialogContent>
-
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-        <Button
-          variant="contained"
-          onClick={() => {
-            enqueueSnackbar('Reorder functionality coming soon!', { variant: 'info' });
-          }}
-        >
-          Reorder
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-};
-
-// Filters Component
-const OrderFilters = ({ filters, onFilterChange, onReset }) => {
-  const [localFilters, setLocalFilters] = useState(filters);
-  const [showFilters, setShowFilters] = useState(false);
-
-  const handleApply = () => {
-    onFilterChange(localFilters);
-  };
-
-  const handleReset = () => {
-    const resetFilters = {
-      status: '',
-      startDate: null,
-      endDate: null,
-      search: ''
-    };
-    setLocalFilters(resetFilters);
-    onReset();
-  };
-
-  React.useEffect(() => {
-    setLocalFilters(filters);
-  }, [filters]);
-
-  return (
-    <Card variant="outlined" sx={{ mb: 3 }}>
-      <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h6">
-            Filters
-          </Typography>
-          <Box>
-            <Button
-              size="small"
-              startIcon={<FilterIcon />}
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
-            </Button>
-            <Button
-              size="small"
-              startIcon={<RefreshIcon />}
-              onClick={handleReset}
-              sx={{ ml: 1 }}
-            >
-              Reset
-            </Button>
-          </Box>
-        </Box>
-
-        <Collapse in={showFilters}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={3}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={localFilters.status}
-                  label="Status"
-                  onChange={(e) => setLocalFilters({ ...localFilters, status: e.target.value })}
-                >
-                  <MenuItem value="">All Status</MenuItem>
-                  <MenuItem value="PENDING">Pending</MenuItem>
-                  <MenuItem value="PROCESSING">Processing</MenuItem>
-                  <MenuItem value="COMPLETED">Completed</MenuItem>
-                  <MenuItem value="CANCELLED">Cancelled</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  label="From Date"
-                  value={localFilters.startDate}
-                  onChange={(date) => setLocalFilters({ ...localFilters, startDate: date })}
-                  slotProps={{ 
-                    textField: { 
-                      size: 'small', 
-                      fullWidth: true,
-                      error: localFilters.startDate && localFilters.endDate && 
-                             localFilters.startDate > localFilters.endDate 
-                    } 
-                  }}
-                  maxDate={localFilters.endDate || new Date()}
-                />
-              </LocalizationProvider>
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  label="To Date"
-                  value={localFilters.endDate}
-                  onChange={(date) => setLocalFilters({ ...localFilters, endDate: date })}
-                  slotProps={{ 
-                    textField: { 
-                      size: 'small', 
-                      fullWidth: true,
-                      error: localFilters.startDate && localFilters.endDate && 
-                             localFilters.startDate > localFilters.endDate 
-                    } 
-                  }}
-                  minDate={localFilters.startDate || null}
-                  maxDate={new Date()}
-                />
-              </LocalizationProvider>
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Search Order/Invoice"
-                value={localFilters.search}
-                onChange={(e) => setLocalFilters({ ...localFilters, search: e.target.value })}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-                placeholder="Order #, Invoice, or Customer"
-              />
-            </Grid>
-
-            <Grid item xs={12}>
-              <Box display="flex" justifyContent="flex-end" gap={1}>
-                <Button
-                  variant="outlined"
-                  onClick={handleReset}
-                >
-                  Clear
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={handleApply}
-                  startIcon={<FilterIcon />}
-                  disabled={localFilters.startDate && localFilters.endDate && 
-                           localFilters.startDate > localFilters.endDate}
-                >
-                  Apply Filters
-                </Button>
+                    )}
+                  </CardContent>
+                </Card>
               </Box>
-            </Grid>
-          </Grid>
-        </Collapse>
-      </CardContent>
-    </Card>
-  );
-};
-
-// Statistics Cards
-const StatisticsCards = ({ statistics, walletBalance }) => {
-  // Ensure we have valid data
-  const safeStatistics = statistics || ResellerOrderService.getDefaultStatistics();
-  const safeWalletBalance = walletBalance || ResellerOrderService.getDefaultWalletBalance();
-  
-  const cards = [
-    {
-      title: 'Total Orders',
-      value: safeStatistics.summary?.totalOrders || 0,
-      icon: <ReceiptIcon />,
-      color: '#1976d2',
-      change: '+12%'
-    },
-    {
-      title: 'Total Revenue',
-      value: ResellerOrderService.formatPrice(
-        safeStatistics.summary?.totalRevenue || 0,
-        safeStatistics.summary?.currency || 'USD'
-      ),
-      icon: <MoneyIcon />,
-      color: '#2e7d32',
-      change: '+18%'
-    },
-    {
-      title: 'Wallet Balance',
-      value: ResellerOrderService.formatPrice(
-        safeWalletBalance.totalBalance || 0,
-        safeWalletBalance.defaultCurrency || 'USD'
-      ),
-      icon: <WalletIcon />,
-      color: '#9c27b0',
-      change: safeWalletBalance.wallets && safeWalletBalance.wallets.length > 0 
-        ? `${safeWalletBalance.wallets.length} currencies`
-        : ''
-    },
-    {
-      title: 'Completed Orders',
-      value: safeStatistics.summary?.completedOrders || 0,
-      icon: <CheckIcon />,
-      color: '#2e7d32',
-      change: '+8%'
-    }
-  ];
-
-  return (
-    <Grid container spacing={3} sx={{ mb: 3 }}>
-      {cards.map((card, index) => (
-        <Grid item xs={12} sm={6} md={3} key={index}>
-          <Card>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography color="textSecondary" variant="body2">
-                    {card.title}
-                  </Typography>
-                  <Typography variant="h5" fontWeight="bold">
-                    {card.value}
-                  </Typography>
-                  {card.change && (
-                    <Typography variant="caption" color="textSecondary">
-                      {card.change}
-                    </Typography>
-                  )}
-                </Box>
-                <Box
-                  sx={{
-                    backgroundColor: `${card.color}15`,
-                    borderRadius: '50%',
-                    p: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {React.cloneElement(card.icon, { sx: { color: card.color, fontSize: 24 } })}
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      ))}
-    </Grid>
+            </Collapse>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 };
 
@@ -1267,6 +350,9 @@ function OrdersPage() {
   const [statistics, setStatistics] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [orderDetailsLoading, setOrderDetailsLoading] = useState(false);
+  const [orderDetails, setOrderDetails] = useState(null);
+  const [vouchers, setVouchers] = useState([]);
 
   const { enqueueSnackbar } = useSnackbar();
 
@@ -1302,7 +388,10 @@ function OrdersPage() {
         apiFilters.status = activeTab;
       }
 
+      console.log('📦 Fetching orders with filters:', apiFilters);
       const result = await ResellerOrderService.getOrders(apiFilters);
+      
+      console.log('📦 Orders result:', result);
       
       if (result.success) {
         setOrders(result.orders || []);
@@ -1324,7 +413,7 @@ function OrdersPage() {
   const fetchStatistics = useCallback(async () => {
     try {
       console.log('📊 Fetching order statistics...');
-      const stats = await ResellerOrderService.getOrderStatistics();
+      const stats = await ResellerOrderService.getOrderStatistics({});
       
       console.log('📊 Statistics result:', stats);
       
@@ -1334,15 +423,44 @@ function OrdersPage() {
       } else {
         console.warn('⚠️ Statistics fetch returned success=false:', stats);
         // Set default statistics
-        setStatistics(ResellerOrderService.getDefaultStatistics());
+        setStatistics(ResellerOrderService.getDefaultStatistics ? 
+          ResellerOrderService.getDefaultStatistics() : 
+          {
+            summary: {
+              totalOrders: 0,
+              totalRevenue: 0,
+              completedOrders: 0,
+              pendingOrders: 0,
+              cancelledOrders: 0,
+              completionRate: 0,
+              currency: 'USD'
+            },
+            statusBreakdown: [],
+            monthlyStatistics: []
+          }
+        );
       }
     } catch (error) {
       console.error('❌ Failed to fetch statistics:', error);
       // Set default statistics on error
-      setStatistics(ResellerOrderService.getDefaultStatistics());
+      setStatistics(ResellerOrderService.getDefaultStatistics ? 
+        ResellerOrderService.getDefaultStatistics() : 
+        {
+          summary: {
+            totalOrders: 0,
+            totalRevenue: 0,
+            completedOrders: 0,
+            pendingOrders: 0,
+            cancelledOrders: 0,
+            completionRate: 0,
+            currency: 'USD'
+          },
+          statusBreakdown: [],
+          monthlyStatistics: []
+        }
+      );
     }
   }, []);
-  
 
   // Fetch wallet balance
   const fetchWalletBalance = useCallback(async () => {
@@ -1353,48 +471,107 @@ function OrdersPage() {
       console.log('💰 Wallet balance result:', balance);
       
       if (balance.success) {
-        console.log('💰 Wallet balance fetched successfully:', balance.balance);
-        setWalletBalance(balance.balance);
+        console.log('💰 Wallet balance fetched successfully:', balance);
+        setWalletBalance(balance);
       } else {
         console.warn('⚠️ Wallet balance fetch returned success=false:', balance);
         // Set default wallet balance
-        setWalletBalance(ResellerOrderService.getDefaultWalletBalance());
+        setWalletBalance(ResellerOrderService.getDefaultWalletBalance ? 
+          ResellerOrderService.getDefaultWalletBalance() : 
+          {
+            totalBalance: 0,
+            availableBalance: 0,
+            wallets: [],
+            defaultCurrency: 'USD'
+          }
+        );
       }
     } catch (error) {
       console.error('❌ Failed to fetch wallet balance:', error);
       // Set default wallet balance on error
-      setWalletBalance(ResellerOrderService.getDefaultWalletBalance());
+      setWalletBalance(ResellerOrderService.getDefaultWalletBalance ? 
+        ResellerOrderService.getDefaultWalletBalance() : 
+        {
+          totalBalance: 0,
+          availableBalance: 0,
+          wallets: [],
+          defaultCurrency: 'USD'
+        }
+      );
     }
   }, []);
+
+  // Fetch order details for modal
+  const fetchOrderDetails = useCallback(async (order) => {
+    try {
+      setOrderDetailsLoading(true);
+      
+      let result;
+      if (order.id && isValidUUID(order.id)) {
+        result = await ResellerOrderService.getOrderById(order.id);
+      } else if (order.orderNumber) {
+        const ordersResult = await ResellerOrderService.getOrders({
+          orderNumber: order.orderNumber,
+          limit: 1
+        });
+        
+        if (ordersResult.success && ordersResult.orders.length > 0) {
+          result = {
+            success: true,
+            order: ordersResult.orders[0]
+          };
+        } else {
+          throw new Error('Order not found');
+        }
+      } else {
+        throw new Error('No valid order identifier');
+      }
+      
+      if (result.success) {
+        setOrderDetails(result.order);
+        // Extract vouchers
+        const allVouchers = result.order.items?.flatMap(item => 
+          item.vouchers?.map(v => ({
+            ...v,
+            productName: item.product?.name || 'Unknown Product'
+          })) || []
+        ) || [];
+        setVouchers(allVouchers);
+      } else {
+        throw new Error(result.message || 'Failed to fetch order details');
+      }
+    } catch (error) {
+      console.error('❌ Fetch order details error:', error);
+      enqueueSnackbar(error.message, { variant: 'error' });
+      setOrderDetails(null);
+      setVouchers([]);
+    } finally {
+      setOrderDetailsLoading(false);
+    }
+  }, [enqueueSnackbar]);
 
   // Initial data fetch
   useEffect(() => {
     fetchOrders();
     fetchStatistics();
     fetchWalletBalance();
-    
-    // Refresh every 30 seconds if page is active
-    const interval = setInterval(() => {
-      fetchOrders();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [fetchOrders, fetchStatistics, fetchWalletBalance]);
+  }, []);
 
   // Refetch when dependencies change
   useEffect(() => {
     fetchOrders();
-  }, [page, rowsPerPage, filters, activeTab, fetchOrders]);
+  }, [page, rowsPerPage, filters, activeTab]);
 
   const handleViewDetails = (order) => {
     setSelectedOrder(order);
     setModalOpen(true);
+    fetchOrderDetails(order);
   };
 
   const handleCancelOrder = async (order) => {
     try {
       const confirmed = window.confirm(
-        `Are you sure you want to cancel order ${order.orderNumber}? This action cannot be undone.`
+        `Are you sure you want to cancel order ${order.orderNumber || order.id}? This action cannot be undone.`
       );
       
       if (!confirmed) return;
@@ -1404,6 +581,11 @@ function OrdersPage() {
       if (result.success) {
         enqueueSnackbar('Order cancelled successfully', { variant: 'success' });
         fetchOrders(); // Refresh orders list
+        if (modalOpen && selectedOrder?.id === order.id) {
+          setModalOpen(false);
+        }
+      } else {
+        throw new Error(result.message || 'Failed to cancel order');
       }
     } catch (error) {
       enqueueSnackbar(error.message, { variant: 'error' });
@@ -1442,7 +624,7 @@ function OrdersPage() {
   };
 
   // Tab counts
-  const tabCounts = React.useMemo(() => {
+  const tabCounts = useMemo(() => {
     return {
       all: totalOrders,
       PENDING: orders.filter(o => o.status === 'PENDING').length,
@@ -1451,6 +633,401 @@ function OrdersPage() {
       CANCELLED: orders.filter(o => o.status === 'CANCELLED').length
     };
   }, [orders, totalOrders]);
+
+  // Simple Statistics Cards Component
+  const StatisticsCards = ({ statistics, walletBalance }) => {
+    const safeStatistics = statistics || { summary: { totalOrders: 0, totalRevenue: 0, completedOrders: 0 } };
+    const safeWalletBalance = walletBalance || { totalBalance: 0, defaultCurrency: 'USD' };
+    
+    const cards = [
+      {
+        title: 'Total Orders',
+        value: safeStatistics.summary?.totalOrders || 0,
+        icon: <ReceiptIcon />,
+        color: '#1976d2',
+      },
+      {
+        title: 'Total Revenue',
+        value: ResellerOrderService.formatPrice ? 
+          ResellerOrderService.formatPrice(
+            safeStatistics.summary?.totalRevenue || 0,
+            safeStatistics.summary?.currency || 'USD'
+          ) : `$${safeStatistics.summary?.totalRevenue || 0}`,
+        icon: <CreditCardIcon />,
+        color: '#2e7d32',
+      },
+      {
+        title: 'Wallet Balance',
+        value: ResellerOrderService.formatPrice ? 
+          ResellerOrderService.formatPrice(
+            safeWalletBalance.totalBalance || 0,
+            safeWalletBalance.defaultCurrency || 'USD'
+          ) : `$${safeWalletBalance.totalBalance || 0}`,
+        icon: <WalletIcon />,
+        color: '#9c27b0',
+      },
+      {
+        title: 'Completed Orders',
+        value: safeStatistics.summary?.completedOrders || 0,
+        icon: <CheckIcon />,
+        color: '#2e7d32',
+      }
+    ];
+
+    return (
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        {cards.map((card, index) => (
+          <Grid item xs={12} sm={6} md={3} key={index}>
+            <Card>
+              <CardContent>
+                <Box display="flex" justifyContent="space-between" alignItems="center">
+                  <Box>
+                    <Typography color="textSecondary" variant="body2">
+                      {card.title}
+                    </Typography>
+                    <Typography variant="h5" fontWeight="bold">
+                      {card.value}
+                    </Typography>
+                  </Box>
+                  <Box
+                    sx={{
+                      backgroundColor: `${card.color}15`,
+                      borderRadius: '50%',
+                      p: 1.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {React.cloneElement(card.icon, { sx: { color: card.color, fontSize: 24 } })}
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    );
+  };
+
+  // Simple Filters Component
+  const OrderFilters = ({ filters, onFilterChange, onReset }) => {
+    const [showFilters, setShowFilters] = useState(false);
+    const [localFilters, setLocalFilters] = useState(filters);
+
+    useEffect(() => {
+      setLocalFilters(filters);
+    }, [filters]);
+
+    const handleApply = () => {
+      onFilterChange(localFilters);
+    };
+
+    const handleReset = () => {
+      const resetFilters = {
+        status: '',
+        startDate: null,
+        endDate: null,
+        search: ''
+      };
+      setLocalFilters(resetFilters);
+      onReset();
+    };
+
+    return (
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">
+              Filters
+            </Typography>
+            <Box>
+              <Button
+                size="small"
+                startIcon={<FilterIcon />}
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
+              </Button>
+              <Button
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={handleReset}
+                sx={{ ml: 1 }}
+              >
+                Reset
+              </Button>
+            </Box>
+          </Box>
+
+          <Collapse in={showFilters}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={3}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={localFilters.status}
+                    label="Status"
+                    onChange={(e) => setLocalFilters({ ...localFilters, status: e.target.value })}
+                  >
+                    <MenuItem value="">All Status</MenuItem>
+                    <MenuItem value="PENDING">Pending</MenuItem>
+                    <MenuItem value="PROCESSING">Processing</MenuItem>
+                    <MenuItem value="COMPLETED">Completed</MenuItem>
+                    <MenuItem value="CANCELLED">Cancelled</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                  <DatePicker
+                    label="From Date"
+                    value={localFilters.startDate}
+                    onChange={(date) => setLocalFilters({ ...localFilters, startDate: date })}
+                    slotProps={{ 
+                      textField: { 
+                        size: 'small', 
+                        fullWidth: true 
+                      } 
+                    }}
+                    maxDate={localFilters.endDate || new Date()}
+                  />
+                </LocalizationProvider>
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                  <DatePicker
+                    label="To Date"
+                    value={localFilters.endDate}
+                    onChange={(date) => setLocalFilters({ ...localFilters, endDate: date })}
+                    slotProps={{ 
+                      textField: { 
+                        size: 'small', 
+                        fullWidth: true 
+                      } 
+                    }}
+                    minDate={localFilters.startDate || null}
+                    maxDate={new Date()}
+                  />
+                </LocalizationProvider>
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Search"
+                  value={localFilters.search}
+                  onChange={(e) => setLocalFilters({ ...localFilters, search: e.target.value })}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
+                  }}
+                  placeholder="Order #, Invoice"
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Box display="flex" justifyContent="flex-end" gap={1}>
+                  <Button
+                    variant="outlined"
+                    onClick={handleReset}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleApply}
+                    startIcon={<FilterIcon />}
+                  >
+                    Apply Filters
+                  </Button>
+                </Box>
+              </Grid>
+            </Grid>
+          </Collapse>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // Simple Order Details Modal
+  const OrderDetailsModal = ({ open, order, orderDetails, vouchers, loading, onClose, onCancel }) => {
+    const displayOrder = orderDetails || order;
+    
+    if (!displayOrder) return null;
+
+    const handleExportVouchers = () => {
+      if (vouchers.length === 0) {
+        enqueueSnackbar('No vouchers to export', { variant: 'info' });
+        return;
+      }
+      
+      const csvContent = vouchers
+        .map(v => `${v.code || ''},${v.pin || ''},${v.serial || ''},${v.status || ''},${v.productName || ''}`)
+        .join('\n');
+      const blob = new Blob([`Code,PIN,Serial,Status,Product\n${csvContent}`], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vouchers_${displayOrder.orderNumber || displayOrder.id}_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    };
+
+    return (
+      <Dialog
+        open={open}
+        onClose={onClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">
+              Order {displayOrder.orderNumber || displayOrder.id?.substring(0, 8)}
+            </Typography>
+            <Chip
+              icon={STATUS_ICONS[displayOrder.status]}
+              label={displayOrder.status}
+              color={STATUS_COLORS[displayOrder.status]}
+            />
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent dividers>
+          {loading ? (
+            <Box display="flex" justifyContent="center" p={3}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Order Summary
+                    </Typography>
+                    <Box display="flex" justifyContent="space-between" mb={1}>
+                      <Typography color="text.secondary">Date:</Typography>
+                      <Typography>
+                        {displayOrder.createdAt ? new Date(displayOrder.createdAt).toLocaleString() : 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box display="flex" justifyContent="space-between" mb={1}>
+                      <Typography color="text.secondary">Invoice:</Typography>
+                      <Typography>
+                        {displayOrder.invoiceId || 'No invoice'}
+                      </Typography>
+                    </Box>
+                    <Box display="flex" justifyContent="space-between" mb={2}>
+                      <Typography color="text.secondary">Total Amount:</Typography>
+                      <Typography variant="h6" color="primary">
+                        {ResellerOrderService.formatPrice ? 
+                          ResellerOrderService.formatPrice(displayOrder.totalPrice || 0, displayOrder.currency || 'USD') :
+                          `$${displayOrder.totalPrice ? displayOrder.totalPrice.toFixed(2) : '0.00'}`
+                        }
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Quick Actions
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid item xs={6}>
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<PrintIcon />}
+                          onClick={() => window.print()}
+                        >
+                          Print
+                        </Button>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<DownloadIcon />}
+                          onClick={handleExportVouchers}
+                          disabled={vouchers.length === 0}
+                        >
+                          Export
+                        </Button>
+                      </Grid>
+                      {displayOrder.status && ['PENDING', 'PROCESSING'].includes(displayOrder.status) && (
+                        <Grid item xs={12}>
+                          <Button
+                            fullWidth
+                            variant="outlined"
+                            color="error"
+                            startIcon={<CancelIcon />}
+                            onClick={() => onCancel && onCancel(displayOrder)}
+                          >
+                            Cancel Order
+                          </Button>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {vouchers.length > 0 && (
+                <Grid item xs={12}>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Typography variant="subtitle1" gutterBottom>
+                        Vouchers ({vouchers.length})
+                      </Typography>
+                      <Grid container spacing={1}>
+                        {vouchers.slice(0, 3).map((voucher) => (
+                          <Grid item xs={12} key={voucher.id}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center" p={1} bgcolor="action.hover" borderRadius={1}>
+                              <Typography fontFamily="monospace">
+                                {voucher.code}
+                              </Typography>
+                              <Chip
+                                label={voucher.status}
+                                size="small"
+                                color={voucher.status === 'DELIVERED' ? 'success' : 'default'}
+                              />
+                            </Box>
+                          </Grid>
+                        ))}
+                        {vouchers.length > 3 && (
+                          <Grid item xs={12}>
+                            <Typography variant="body2" color="text.secondary" align="center">
+                              + {vouchers.length - 3} more vouchers
+                            </Typography>
+                          </Grid>
+                        )}
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              )}
+            </Grid>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={onClose}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -1475,15 +1052,6 @@ function OrdersPage() {
                   disabled={loading}
                 >
                   Refresh
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    // Navigate to create order page
-                    window.location.href = '/create-order';
-                  }}
-                >
-                  New Order
                 </Button>
               </Box>
             </Box>
@@ -1608,15 +1176,6 @@ function OrdersPage() {
                     ? 'Try changing your filters to see more results'
                     : 'You haven\'t placed any orders yet'}
                 </Typography>
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    // Navigate to create order page
-                    window.location.href = '/create-order';
-                  }}
-                >
-                  Create Your First Order
-                </Button>
               </Box>
             ) : (
               <>
@@ -1662,69 +1221,21 @@ function OrdersPage() {
               </>
             )}
           </Paper>
-
-          {/* Quick Stats */}
-          <Grid container spacing={3} sx={{ mt: 2 }}>
-            <Grid item xs={12} md={4}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Average Order Value
-                  </Typography>
-                  <Typography variant="h4">
-                    {statistics?.summary?.totalRevenue && statistics?.summary?.totalOrders
-                      ? ResellerOrderService.formatPrice(
-                          statistics.summary.totalRevenue / statistics.summary.totalOrders,
-                          'USD'
-                        )
-                      : ResellerOrderService.formatPrice(0, 'USD')}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Completion Rate
-                  </Typography>
-                  <Typography variant="h4">
-                    {statistics?.summary?.totalOrders && statistics?.summary?.completedOrders
-                      ? Math.round((statistics.summary.completedOrders / statistics.summary.totalOrders) * 100)
-                      : 0}%
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    This Month
-                  </Typography>
-                  <Typography variant="h4">
-                    {statistics?.monthlyStatistics?.[0]?.orders || 0} orders
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {statistics?.monthlyStatistics?.[0]?.revenue
-                      ? ResellerOrderService.formatPrice(
-                          statistics.monthlyStatistics[0].revenue,
-                          'USD'
-                        )
-                      : ResellerOrderService.formatPrice(0, 'USD')} revenue
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
         </Container>
 
         {/* Order Details Modal */}
         <OrderDetailsModal
           open={modalOpen}
           order={selectedOrder}
-          onClose={() => setModalOpen(false)}
-          onCancel={fetchOrders}
+          orderDetails={orderDetails}
+          vouchers={vouchers}
+          loading={orderDetailsLoading}
+          onClose={() => {
+            setModalOpen(false);
+            setOrderDetails(null);
+            setVouchers([]);
+          }}
+          onCancel={handleCancelOrder}
         />
 
         {/* Footer Alert */}

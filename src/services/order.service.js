@@ -47,7 +47,7 @@ class ResellerOrderService {
     }
   }
 
-  // Helper to handle encrypted responses
+  // Simplified and corrected handleResponse method
   static async handleResponse(response) {
     try {
       console.log('📦 [OrderService] API Response received:', {
@@ -57,21 +57,20 @@ class ResellerOrderService {
         hasSuccessField: response.data?.success !== undefined,
         responseKeys: Object.keys(response.data || {})
       });
-
+  
       // If response already has success=false, return as-is
       if (response.data?.success === false) {
         console.log('❌ [OrderService] Response indicates failure, returning as-is');
         return response.data;
       }
-
+  
       // Check if response is encrypted
       if (response.data?.encryptedKey && response.data?.ciphertext && response.data?.iv) {
         console.log('🔐 [OrderService] Received encrypted response structure');
         
-        // CRITICAL: Ensure we have private key for decryption
+        // Ensure we have private key for decryption
         if (!sessionKeys.privateKey) {
           console.error('❌ [OrderService] NO PRIVATE KEY AVAILABLE for decryption!');
-          console.log('🔄 [OrderService] Attempting to load keys from localStorage...');
           
           const keys = await loadKeyPair();
           if (keys) {
@@ -90,9 +89,7 @@ class ResellerOrderService {
           const decryptedData = await decryptServerResponse(response.data, sessionKeys.privateKey);
           console.log('✅ [OrderService] Decryption successful:', {
             decryptedType: typeof decryptedData,
-            isObject: typeof decryptedData === 'object',
-            isString: typeof decryptedData === 'string',
-            value: typeof decryptedData === 'string' ? decryptedData.substring(0, 100) + '...' : 'object'
+            isString: typeof decryptedData === 'string'
           });
           
           let parsedData = decryptedData;
@@ -102,34 +99,18 @@ class ResellerOrderService {
             try {
               console.log('🔄 [OrderService] Parsing decrypted string as JSON...');
               parsedData = JSON.parse(decryptedData);
-              console.log('✅ [OrderService] String parsed successfully:', {
-                isObject: typeof parsedData === 'object',
-                keys: parsedData ? Object.keys(parsedData) : 'null'
-              });
+              console.log('✅ [OrderService] String parsed successfully');
             } catch (parseError) {
               console.warn('⚠️ [OrderService] Failed to parse decrypted string as JSON:', parseError.message);
-              // If it's a string that looks like JSON but has issues, try to fix it
-              if (decryptedData.includes('{') && decryptedData.includes('}')) {
-                try {
-                  // Try to fix common JSON issues
-                  const fixedJson = decryptedData
-                    .replace(/'/g, '"')
-                    .replace(/(\w+):/g, '"$1":');
-                  parsedData = JSON.parse(fixedJson);
-                  console.log('🔄 [OrderService] Fixed and parsed JSON successfully');
-                } catch (fixError) {
-                  console.error('❌ [OrderService] Failed to fix and parse JSON:', fixError);
-                  // Return the string as-is
-                  parsedData = { data: decryptedData, success: true };
-                }
-              } else {
-                // Not JSON, return as plain data
-                parsedData = { data: decryptedData, success: true };
-              }
+              // If parsing fails, return the string as data
+              return {
+                success: true,
+                data: decryptedData
+              };
             }
           }
           
-          // Validate and normalize parsed data
+          // Now handle the parsed object
           if (parsedData && typeof parsedData === 'object') {
             console.log('📊 [OrderService] Parsed data structure:', {
               hasDataField: 'data' in parsedData,
@@ -137,58 +118,41 @@ class ResellerOrderService {
               keys: Object.keys(parsedData)
             });
             
-            let finalResult = { success: true };
-            
-            // Case 1: parsedData has data field
+            // The backend sends { success: true, data: {...}, message: "..." }
+            // So we should spread data properties to top level
             if (parsedData.data !== undefined) {
-              console.log('📁 [OrderService] Structure: parsedData.data');
-              finalResult = {
+              console.log('📁 [OrderService] Structure: parsedData.data found');
+              return {
                 success: parsedData.success !== false,
-                ...parsedData,
-                ...(typeof parsedData.data === 'object' ? parsedData.data : { data: parsedData.data })
-              };
-            }
-            // Case 2: parsedData has success field
-            else if (parsedData.success !== undefined) {
-              console.log('📁 [OrderService] Structure: parsedData with success field');
-              finalResult = parsedData;
-            }
-            // Case 3: It's an array
-            else if (Array.isArray(parsedData)) {
-              console.log('📁 [OrderService] Structure: Array');
-              finalResult = {
-                success: true,
-                data: parsedData
-              };
-            }
-            // Case 4: Empty or unknown structure
-            else {
-              console.log('📁 [OrderService] Structure: Direct object');
-              finalResult = {
-                success: true,
-                ...parsedData
+                message: parsedData.message,
+                ...parsedData.data  // Spread data properties to top level
               };
             }
             
-            console.log('🎯 [OrderService] Final processed result:', {
-              success: finalResult.success,
-              hasData: !!finalResult.data,
-              keys: Object.keys(finalResult)
-            });
+            // If no 'data' field, check for success
+            if (parsedData.success !== undefined) {
+              console.log('📁 [OrderService] Structure: parsedData has success field');
+              return parsedData;
+            }
             
-            return finalResult;
-          } else {
-            console.error('❌ [OrderService] Invalid parsed data format:', {
-              type: typeof parsedData,
-              value: parsedData
-            });
-            
-            // Return as-is with success flag
+            // Otherwise, it's the data itself
+            console.log('📁 [OrderService] Structure: parsedData is the data');
             return {
               success: true,
-              data: parsedData
+              ...parsedData
             };
           }
+          
+          console.error('❌ [OrderService] Invalid parsed data format:', {
+            type: typeof parsedData,
+            value: parsedData
+          });
+          
+          return {
+            success: true,
+            data: parsedData
+          };
+          
         } catch (decryptError) {
           console.error('❌ [OrderService] Decryption process failed:', {
             error: decryptError.message,
@@ -201,6 +165,7 @@ class ResellerOrderService {
             const plainData = response.data.data;
             return {
               success: response.data.success !== false,
+              message: response.data.message,
               ...(typeof plainData === 'object' ? plainData : { data: plainData })
             };
           }
@@ -209,23 +174,39 @@ class ResellerOrderService {
           return {
             success: false,
             error: 'Decryption failed',
-            message: decryptError.message,
-            encryptedData: response.data
+            message: decryptError.message
           };
         }
       }
-
+  
       // Handle plain response
       console.log('📨 [OrderService] Plain response received');
       
       if (response.data && typeof response.data === 'object') {
-        // Ensure success field exists
-        const result = { ...response.data };
-        if (result.success === undefined) {
-          result.success = response.status >= 200 && response.status < 300;
+        const backendResponse = response.data;
+        
+        // Check if backend response has the standard structure with 'data' field
+        if (backendResponse.data !== undefined) {
+          console.log('📊 [OrderService] Plain response has data field');
+          return {
+            success: backendResponse.success !== false,
+            message: backendResponse.message,
+            ...backendResponse.data  // Spread data properties to top level
+          };
         }
         
-        return result;
+        // If no 'data' field, check for success
+        if (backendResponse.success !== undefined) {
+          console.log('📊 [OrderService] Plain response has success field');
+          return backendResponse;
+        }
+        
+        // Otherwise, it's the data itself
+        console.log('📊 [OrderService] Plain response is the data itself');
+        return {
+          success: response.status >= 200 && response.status < 300,
+          ...backendResponse
+        };
       }
       
       // If response.data is not an object, wrap it
@@ -239,15 +220,14 @@ class ResellerOrderService {
       return {
         success: false,
         error: 'Response handling failed',
-        message: error.message,
-        originalResponse: response?.data
+        message: error.message
       };
     }
   }
 
   // ============== ORDER MANAGEMENT ==============
 
-  // Create a new order
+  // Create a new order - CORRECTED
   static async createOrder(orderData) {
     try {
       console.log('🔄 [OrderService] Creating order with data:', orderData);
@@ -259,7 +239,7 @@ class ResellerOrderService {
       if (!orderData.items || !Array.isArray(orderData.items) || orderData.items.length === 0) {
         throw new Error('Order must contain at least one item');
       }
-
+  
       // Validate items structure
       for (const item of orderData.items) {
         if (!item.productId) {
@@ -286,25 +266,22 @@ class ResellerOrderService {
           }
         }
       }
-
-      // Optional: Encrypt sensitive data before sending
-      const encryptedData = await ResellerOrderService.encryptOrderData(orderData);
-      
-      const response = await apiClient.post('/api/v1/reseller-user/orders/create', encryptedData, {
+  
+      // Use the correct endpoint
+      const response = await apiClient.post('/api/v1/reseller-user/orders/create', orderData, {
         withCredentials: true,
         headers: {
           'Content-Type': 'application/json'
         }
       });
-
+  
       console.log('📥 [OrderService] Raw API response status:', response.status);
       
       const result = await ResellerOrderService.handleResponse(response);
       
       console.log('✅ [OrderService] Processed result:', {
         success: result?.success,
-        hasData: !!result?.data,
-        invoiceId: result?.data?.invoiceId,
+        hasOrder: !!(result?.order || result?.id || result?.orderId),
         resultKeys: Object.keys(result || {})
       });
       
@@ -313,10 +290,36 @@ class ResellerOrderService {
       }
       
       // Extract order data from response
-      const orderResult = result?.data || result;
+      let orderResult = {};
+      
+      // Since handleResponse spreads data to top level, order should be at result level
+      if (result && typeof result === 'object') {
+        // Check if result is the order itself
+        if (result.id || result.orderId) {
+          orderResult = result;
+          console.log('📊 Order found at result level');
+        }
+        // Check if result has order field
+        else if (result.order && (result.order.id || result.order.orderId)) {
+          orderResult = result.order;
+          console.log('📊 Order found at result.order');
+        }
+        // Check if result has data field with order
+        else if (result.data && (result.data.id || result.data.orderId)) {
+          orderResult = result.data;
+          console.log('📊 Order found at result.data');
+        }
+        // Check if result.data has order field
+        else if (result.data?.order && (result.data.order.id || result.data.order.orderId)) {
+          orderResult = result.data.order;
+          console.log('📊 Order found at result.data.order');
+        }
+      }
       
       // Cache the order if needed
-      ResellerOrderService.cacheOrder(orderResult);
+      if (orderResult.id || orderResult.orderId) {
+        ResellerOrderService.cacheOrder(orderResult);
+      }
       
       return {
         success: true,
@@ -355,7 +358,7 @@ class ResellerOrderService {
     }
   }
 
-  // Get orders list
+  // Get orders list - CORRECTED
   static async getOrders(filters = {}) {
     try {
       console.log('🔍 [OrderService] Fetching orders with filters:', filters);
@@ -390,14 +393,14 @@ class ResellerOrderService {
         params: filters,
         withCredentials: true
       });
-
+  
       console.log('📥 [OrderService] Raw API response status:', response.status);
       
       const result = await ResellerOrderService.handleResponse(response);
       
       console.log('✅ [OrderService] Processed result:', {
         success: result?.success,
-        hasOrders: !!result?.orders,
+        hasOrders: !!(result?.orders),
         ordersCount: result?.orders?.length || 0,
         resultKeys: Object.keys(result || {})
       });
@@ -406,9 +409,44 @@ class ResellerOrderService {
         throw new Error(result.message || result.error || 'Failed to fetch orders');
       }
       
-      // Extract orders from response
-      const orders = result?.data?.orders || result?.orders || [];
-      const pagination = result?.data?.pagination || result?.pagination || {};
+      // Extract orders from result - FIXED LOGIC
+      let orders = [];
+      let pagination = {};
+      
+      // Since handleResponse spreads data to top level, orders should be at result.orders
+      if (result?.orders && Array.isArray(result.orders)) {
+        orders = result.orders;
+        console.log('📊 Found orders array:', orders.length);
+      }
+      // Fallback: result is the orders array
+      else if (Array.isArray(result)) {
+        orders = result;
+        console.log('📊 Result is orders array:', orders.length);
+      }
+      // Fallback: check data field (legacy support)
+      else if (result?.data?.orders && Array.isArray(result.data.orders)) {
+        orders = result.data.orders;
+        console.log('📊 Found nested orders array:', orders.length);
+      }
+      
+      // Extract pagination
+      if (result?.pagination) {
+        pagination = result.pagination;
+      } else if (result?.data?.pagination) {
+        pagination = result.data.pagination;
+      } else if (result?.total !== undefined) {
+        // Create pagination from total count
+        const page = parseInt(filters.page) || 1;
+        const limit = parseInt(filters.limit) || 10;
+        pagination = {
+          page,
+          limit,
+          total: result.total || orders.length,
+          totalPages: Math.ceil((result.total || orders.length) / limit)
+        };
+      }
+      
+      console.log('📊 Extracted orders:', orders.length);
       
       // Cache the results
       if (orders.length > 0) {
@@ -466,7 +504,7 @@ class ResellerOrderService {
     }
   }
 
-  // Get order by ID
+  // Get order by ID - CORRECTED
   static async getOrderById(orderId) {
     try {
       console.log('🔍 [OrderService] Fetching order by ID:', orderId);
@@ -478,7 +516,7 @@ class ResellerOrderService {
       // Ensure encryption is initialized
       await ResellerOrderService.initEncryptionIfNeeded();
       
-      // Check cache first
+      // Check cache first - try both UUID and order number
       const cacheKey = `reseller_order_${orderId}`;
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
@@ -498,18 +536,75 @@ class ResellerOrderService {
         }
       }
       
-      const response = await apiClient.get(`/api/v1/reseller-user/orders/${orderId}`, {
-        withCredentials: true
-      });
+      let response;
+      
+      // Check if it looks like a UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(orderId)) {
+        // Try as UUID
+        response = await apiClient.get(`/api/v1/reseller-user/orders/${orderId}`, {
+          withCredentials: true
+        });
+      } else {
+        // Try as order number - use search endpoint
+        response = await apiClient.get('/api/v1/reseller-user/orders/list', {
+          params: { orderNumber: orderId, limit: 1 },
+          withCredentials: true
+        });
+      }
 
       const result = await ResellerOrderService.handleResponse(response);
+      
+      console.log('✅ [OrderService] Processed order result:', {
+        success: result?.success,
+        hasOrder: !!(result?.id || result?.orderId),
+        resultKeys: Object.keys(result || {})
+      });
       
       if (result?.success === false) {
         throw new Error(result.message || result.error || 'Failed to get order');
       }
       
-      // Extract order from response
-      const order = result?.data || result;
+      // Extract order from result - FIXED LOGIC
+      let order = null;
+      
+      // Since handleResponse spreads data to top level, result should be the order
+      if (result && typeof result === 'object') {
+        // Check if result is the order itself
+        if (result.id || result.orderId) {
+          order = result;
+          console.log('📊 Order found at result level');
+        }
+        // Check if result has order field
+        else if (result.order && (result.order.id || result.order.orderId)) {
+          order = result.order;
+          console.log('📊 Order found at result.order');
+        }
+        // Check if result has data field with order
+        else if (result.data && (result.data.id || result.data.orderId)) {
+          order = result.data;
+          console.log('📊 Order found at result.data');
+        }
+        // Check if result.data has order field
+        else if (result.data?.order && (result.data.order.id || result.data.order.orderId)) {
+          order = result.data.order;
+          console.log('📊 Order found at result.data.order');
+        }
+        // If we searched by order number and got a list
+        else if (Array.isArray(result.orders) && result.orders.length > 0) {
+          order = result.orders[0];
+          console.log('📊 Order found in orders array');
+        }
+        else if (Array.isArray(result) && result.length > 0) {
+          order = result[0];
+          console.log('📊 Order found in array result');
+        }
+      }
+      
+      if (!order) {
+        console.warn('⚠️ [OrderService] No order data found. Result:', result);
+        throw new Error('Order data not found in response');
+      }
       
       // Cache the order
       if (order) {
@@ -547,7 +642,22 @@ class ResellerOrderService {
       // Ensure encryption is initialized
       await ResellerOrderService.initEncryptionIfNeeded();
       
-      const response = await apiClient.post(`/api/v1/reseller-user/orders/${orderId}/cancel`, {}, {
+      // Check if it looks like a UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let endpoint;
+      
+      if (uuidRegex.test(orderId)) {
+        endpoint = `/api/v1/reseller-user/orders/${orderId}/cancel`;
+      } else {
+        // First get the order ID from order number
+        const orderResult = await ResellerOrderService.getOrderById(orderId);
+        if (!orderResult.success || !orderResult.order) {
+          throw new Error('Order not found');
+        }
+        endpoint = `/api/v1/reseller-user/orders/${orderResult.order.id}/cancel`;
+      }
+      
+      const response = await apiClient.post(endpoint, {}, {
         withCredentials: true
       });
 
@@ -565,7 +675,7 @@ class ResellerOrderService {
       
       return {
         success: true,
-        ...result?.data,
+        ...result,
         message: result?.message || 'Order cancelled successfully'
       };
       
@@ -587,7 +697,22 @@ class ResellerOrderService {
       // Ensure encryption is initialized
       await ResellerOrderService.initEncryptionIfNeeded();
       
-      const response = await apiClient.get(`/api/v1/reseller-user/orders/${orderId}/status`, {
+      // Check if it looks like a UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      let endpoint;
+      
+      if (uuidRegex.test(orderId)) {
+        endpoint = `/api/v1/reseller-user/orders/${orderId}/status`;
+      } else {
+        // First get the order ID from order number
+        const orderResult = await ResellerOrderService.getOrderById(orderId);
+        if (!orderResult.success || !orderResult.order) {
+          throw new Error('Order not found');
+        }
+        endpoint = `/api/v1/reseller-user/orders/${orderResult.order.id}/status`;
+      }
+      
+      const response = await apiClient.get(endpoint, {
         withCredentials: true
       });
 
@@ -599,7 +724,7 @@ class ResellerOrderService {
       
       return {
         success: true,
-        status: result?.data || result
+        status: result?.status || result
       };
       
     } catch (error) {
@@ -608,467 +733,9 @@ class ResellerOrderService {
     }
   }
 
-  // ============== INVOICE MANAGEMENT ==============
-
-  // Get invoices list
-  static async getInvoices(filters = {}) {
-    try {
-      console.log('🔍 [OrderService] Fetching invoices with filters:', filters);
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/orders/invoices/list', {
-        params: filters,
-        withCredentials: true
-      });
-
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to fetch invoices');
-      }
-      
-      return {
-        success: true,
-        invoices: result?.data?.invoices || result?.invoices || [],
-        pagination: result?.data?.pagination || result?.pagination || {},
-        summary: result?.data?.summary || result?.summary || {}
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get invoices error:', error);
-      throw ResellerOrderService.handleApiError(error);
-    }
-  }
-
-  // Get orders by invoice ID
-  static async getOrdersByInvoice(invoiceId) {
-    try {
-      console.log('🔍 [OrderService] Fetching orders for invoice:', invoiceId);
-      
-      if (!invoiceId) {
-        throw new Error('Invoice ID is required');
-      }
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get(`/api/v1/reseller-user/orders/invoices/${invoiceId}/orders`, {
-        withCredentials: true
-      });
-
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to get invoice orders');
-      }
-      
-      return {
-        success: true,
-        ...result?.data,
-        invoice: result?.data?.invoice || result?.invoice
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get orders by invoice error:', error);
-      throw ResellerOrderService.handleApiError(error);
-    }
-  }
-
-  // ============== VOUCHER MANAGEMENT ==============
-
-  // Get vouchers list
-  static async getVouchers(filters = {}) {
-    try {
-      console.log('🔍 [OrderService] Fetching vouchers with filters:', filters);
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/orders/vouchers/list', {
-        params: filters,
-        withCredentials: true
-      });
-
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to fetch vouchers');
-      }
-      
-      return {
-        success: true,
-        vouchers: result?.data?.vouchers || result?.vouchers || [],
-        pagination: result?.data?.pagination || result?.pagination || {},
-        summary: result?.data?.summary || result?.summary || {}
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get vouchers error:', error);
-      throw ResellerOrderService.handleApiError(error);
-    }
-  }
-
-  // Get voucher by ID
-  static async getVoucherById(voucherId) {
-    try {
-      console.log('🔍 [OrderService] Fetching voucher by ID:', voucherId);
-      
-      if (!voucherId) {
-        throw new Error('Voucher ID is required');
-      }
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get(`/api/v1/reseller-user/orders/vouchers/${voucherId}`, {
-        withCredentials: true
-      });
-
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to get voucher');
-      }
-      
-      return {
-        success: true,
-        voucher: result?.data?.voucher || result?.voucher || result?.data || result
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get voucher by ID error:', error);
-      throw ResellerOrderService.handleApiError(error);
-    }
-  }
-
-  // Get voucher statistics
-  static async getVoucherStatistics() {
-    try {
-      console.log('📊 [OrderService] Fetching voucher statistics');
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/orders/vouchers/statistics', {
-        withCredentials: true
-      });
-
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to get voucher statistics');
-      }
-      
-      return {
-        success: true,
-        ...result?.data,
-        statistics: result?.data || result
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get voucher statistics error:', error);
-      throw ResellerOrderService.handleApiError(error);
-    }
-  }
-
-  // ============== STATISTICS & ANALYTICS ==============
-
-  // Get order statistics
-  static async getOrderStatistics(filters = {}) {
-    try {
-      console.log('📊 [OrderService] Fetching order statistics with filters:', filters);
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/orders/statistics', {
-        params: filters,
-        withCredentials: true
-      });
-  
-      console.log('📊 [OrderService] Statistics response received:', {
-        status: response.status,
-        dataKeys: response.data ? Object.keys(response.data) : 'none'
-      });
-  
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      console.log('📊 [OrderService] Statistics result processed:', {
-        success: result?.success,
-        hasStatistics: !!result?.statistics,
-        dataKeys: result ? Object.keys(result) : 'null'
-      });
-      
-      // Even if result.success is false, we should still try to handle it gracefully
-      if (result?.success === false) {
-        console.warn('⚠️ [OrderService] Statistics fetch returned success=false:', result);
-        // Don't throw error - return default statistics
-        return {
-          success: true,
-          statistics: ResellerOrderService.getDefaultStatistics()
-        };
-      }
-      
-      // Handle different response structures
-      let statistics = null;
-      
-      if (result?.data) {
-        // Case 1: result has data field
-        statistics = result.data;
-      } else if (result?.statistics) {
-        // Case 2: result has statistics field
-        statistics = result.statistics;
-      } else if (result && typeof result === 'object' && !Array.isArray(result)) {
-        // Case 3: result is the statistics object itself
-        statistics = result;
-      } else {
-        // Case 4: No valid data found
-        console.warn('⚠️ [OrderService] No valid statistics data found in response:', result);
-        statistics = ResellerOrderService.getDefaultStatistics();
-      }
-      
-      // Ensure statistics has the expected structure
-      if (!statistics.summary) {
-        statistics.summary = ResellerOrderService.getDefaultStatistics().summary;
-      }
-      
-      if (!statistics.statusBreakdown) {
-        statistics.statusBreakdown = [];
-      }
-      
-      if (!statistics.monthlyStatistics) {
-        statistics.monthlyStatistics = [];
-      }
-      
-      return {
-        success: true,
-        statistics: statistics
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get order statistics error:', error);
-      
-      // Check if it's a 400 error and return default statistics
-      if (error.response?.status === 400) {
-        console.log('🔄 [OrderService] Returning default statistics due to 400 error');
-        return {
-          success: true,
-          statistics: ResellerOrderService.getDefaultStatistics()
-        };
-      }
-      
-      // Return default statistics instead of throwing error
-      return {
-        success: true,
-        statistics: ResellerOrderService.getDefaultStatistics()
-      };
-    }
-  }
-
-  // In the ResellerOrderService class - update getOrderStatistics method
-
-// Get order statistics
-static async getOrderStatistics(filters = {}) {
-    try {
-      console.log('📊 [OrderService] Fetching order statistics with filters:', filters);
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/orders/statistics', {
-        params: filters,
-        withCredentials: true
-      });
-  
-      console.log('📊 [OrderService] Statistics response received:', {
-        status: response.status,
-        dataKeys: response.data ? Object.keys(response.data) : 'none'
-      });
-  
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      console.log('📊 [OrderService] Statistics result processed:', {
-        success: result?.success,
-        hasStatistics: !!result?.statistics,
-        dataKeys: result ? Object.keys(result) : 'null'
-      });
-      
-      // Even if result.success is false, we should still try to handle it gracefully
-      if (result?.success === false) {
-        console.warn('⚠️ [OrderService] Statistics fetch returned success=false:', result);
-        // Don't throw error - return default statistics
-        return {
-          success: true,
-          statistics: ResellerOrderService.getDefaultStatistics()
-        };
-      }
-      
-      // Handle different response structures
-      let statistics = null;
-      
-      if (result?.data) {
-        // Case 1: result has data field
-        statistics = result.data;
-      } else if (result?.statistics) {
-        // Case 2: result has statistics field
-        statistics = result.statistics;
-      } else if (result && typeof result === 'object' && !Array.isArray(result)) {
-        // Case 3: result is the statistics object itself
-        statistics = result;
-      } else {
-        // Case 4: No valid data found
-        console.warn('⚠️ [OrderService] No valid statistics data found in response:', result);
-        statistics = ResellerOrderService.getDefaultStatistics();
-      }
-      
-      // Ensure statistics has the expected structure
-      if (!statistics.summary) {
-        statistics.summary = ResellerOrderService.getDefaultStatistics().summary;
-      }
-      
-      if (!statistics.statusBreakdown) {
-        statistics.statusBreakdown = [];
-      }
-      
-      if (!statistics.monthlyStatistics) {
-        statistics.monthlyStatistics = [];
-      }
-      
-      return {
-        success: true,
-        statistics: statistics
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get order statistics error:', error);
-      
-      // Check if it's a 400 error and return default statistics
-      if (error.response?.status === 400) {
-        console.log('🔄 [OrderService] Returning default statistics due to 400 error');
-        return {
-          success: true,
-          statistics: ResellerOrderService.getDefaultStatistics()
-        };
-      }
-      
-      // Return default statistics instead of throwing error
-      return {
-        success: true,
-        statistics: ResellerOrderService.getDefaultStatistics()
-      };
-    }
-  }
-  
-  // Add this helper method to get default statistics
-  static getDefaultStatistics() {
-    return {
-      summary: {
-        totalOrders: 0,
-        totalRevenue: 0,
-        completedOrders: 0,
-        pendingOrders: 0,
-        cancelledOrders: 0,
-        completionRate: 0,
-        currency: 'USD'
-      },
-      statusBreakdown: [],
-      monthlyStatistics: []
-    };
-  }
-  
-  // Also update getWalletBalance to handle 400 errors similarly
-  static async getWalletBalance(currency = null) {
-    try {
-      console.log('💰 [OrderService] Fetching wallet balance');
-      
-      // Ensure encryption is initialized
-      await ResellerOrderService.initEncryptionIfNeeded();
-      
-      const params = currency ? { currency } : {};
-      const response = await apiClient.get('/api/v1/reseller-user/orders/wallet/balance', {
-        params,
-        withCredentials: true
-      });
-  
-      console.log('💰 [OrderService] Wallet balance response:', {
-        status: response.status,
-        dataKeys: response.data ? Object.keys(response.data) : 'none'
-      });
-  
-      const result = await ResellerOrderService.handleResponse(response);
-      
-      console.log('💰 [OrderService] Processed wallet balance result:', {
-        success: result?.success,
-        hasBalance: !!result?.balance,
-        resultKeys: result ? Object.keys(result) : 'none'
-      });
-      
-      if (result?.success === false) {
-        // Don't throw error for wallet balance - return default
-        console.warn('⚠️ [OrderService] Wallet balance fetch returned success=false:', result);
-        return {
-          success: true,
-          balance: ResellerOrderService.getDefaultWalletBalance()
-        };
-      }
-      
-      // Handle different response structures
-      let balance = null;
-      
-      if (result?.data) {
-        balance = result.data;
-      } else if (result?.balance) {
-        balance = result.balance;
-      } else if (result && typeof result === 'object' && !Array.isArray(result)) {
-        balance = result;
-      } else {
-        balance = ResellerOrderService.getDefaultWalletBalance();
-      }
-      
-      // Ensure balance has required structure
-      if (!balance || typeof balance !== 'object') {
-        balance = ResellerOrderService.getDefaultWalletBalance();
-      }
-      
-      return {
-        success: true,
-        balance: balance
-      };
-      
-    } catch (error) {
-      console.error('❌ [OrderService] Get wallet balance error:', error);
-      
-      // Check if it's a 400 error
-      if (error.response?.status === 400) {
-        console.log('🔄 [OrderService] Returning default wallet balance due to 400 error');
-        return {
-          success: true,
-          balance: ResellerOrderService.getDefaultWalletBalance()
-        };
-      }
-      
-      // Return default balance instead of throwing
-      return {
-        success: true,
-        balance: ResellerOrderService.getDefaultWalletBalance()
-      };
-    }
-  }
-  
-  // Add this helper method for default wallet balance
-  static getDefaultWalletBalance() {
-    return {
-      totalBalance: 0,
-      availableBalance: 0,
-      wallets: [],
-      defaultCurrency: 'USD'
-    };
-  }
   // ============== WALLET & BALANCE ==============
 
-  // Get wallet balance
+  // Get wallet balance - CORRECTED
   static async getWalletBalance(currency = null) {
     try {
       console.log('💰 [OrderService] Fetching wallet balance');
@@ -1082,99 +749,101 @@ static async getOrderStatistics(filters = {}) {
         withCredentials: true
       });
   
-      console.log('💰 [OrderService] Wallet balance response:', {
-        status: response.status,
-        dataKeys: response.data ? Object.keys(response.data) : 'none'
-      });
+      console.log('💰 [OrderService] Wallet balance response received');
   
       const result = await ResellerOrderService.handleResponse(response);
       
       console.log('💰 [OrderService] Processed wallet balance result:', {
         success: result?.success,
-        hasBalance: !!result?.balance,
-        resultKeys: result ? Object.keys(result) : 'none'
+        totalBalance: result?.totalBalance || result?.totalBalanceUSD,
+        resultKeys: Object.keys(result || {})
       });
       
       if (result?.success === false) {
-        // Don't throw error for wallet balance - return default
         console.warn('⚠️ [OrderService] Wallet balance fetch returned success=false:', result);
         return {
           success: true,
-          balance: ResellerOrderService.getDefaultWalletBalance()
+          ...ResellerOrderService.getDefaultWalletBalance()
         };
       }
       
-      // Handle different response structures
-      let balance = null;
-      
-      if (result?.data) {
-        balance = result.data;
-      } else if (result?.balance) {
-        balance = result.balance;
-      } else if (result && typeof result === 'object' && !Array.isArray(result)) {
-        balance = result;
-      } else {
-        balance = ResellerOrderService.getDefaultWalletBalance();
-      }
-      
-      // Ensure balance has required structure
-      if (!balance || typeof balance !== 'object') {
-        balance = ResellerOrderService.getDefaultWalletBalance();
-      }
-      
+      // Return standardized structure
       return {
         success: true,
-        balance: balance
+        totalBalance: result?.totalBalance || result?.totalBalanceUSD || 0,
+        availableBalance: result?.availableBalance || result?.totalBalance || 0,
+        wallets: result?.wallets || [],
+        currency: result?.currency || currency || 'USD',
+        ...result  // Include any other fields
       };
       
     } catch (error) {
       console.error('❌ [OrderService] Get wallet balance error:', error);
       
-      // Check if it's a 400 error
-      if (error.response?.status === 400) {
-        console.log('🔄 [OrderService] Returning default wallet balance due to 400 error');
-        return {
-          success: true,
-          balance: ResellerOrderService.getDefaultWalletBalance()
-        };
-      }
-      
-      // Return default balance instead of throwing
+      // Return default instead of throwing
       return {
         success: true,
-        balance: ResellerOrderService.getDefaultWalletBalance()
+        ...ResellerOrderService.getDefaultWalletBalance()
       };
     }
   }
 
-  // ============== HEALTH CHECK ==============
+  // ============== STATISTICS ==============
 
-  // Health check
-  static async healthCheck() {
+  // Get order statistics - CORRECTED
+
+  static async getOrderStatistics(filters = {}) {
     try {
-      console.log('🏥 [OrderService] Performing health check');
+      console.log('📊 [OrderService] Fetching order statistics');
       
       // Ensure encryption is initialized
       await ResellerOrderService.initEncryptionIfNeeded();
       
-      const response = await apiClient.get('/api/v1/reseller-user/orders/health', {
+      // Use the correct endpoint WITHOUT params
+      const response = await apiClient.get('/api/v1/reseller-user/orders/statistics', {
         withCredentials: true
+        // No params object at all
       });
-
+  
+      console.log('📊 [OrderService] Statistics response received');
+  
       const result = await ResellerOrderService.handleResponse(response);
       
+      console.log('📊 [OrderService] Statistics result processed:', {
+        success: result?.success,
+        hasStatistics: !!result?.statistics || !!result?.summary,
+        resultKeys: Object.keys(result || {})
+      });
+      
       if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Health check failed');
+        console.warn('⚠️ [OrderService] Statistics fetch returned success=false:', result);
+        return {
+          success: true,
+          statistics: ResellerOrderService.getDefaultStatistics()
+        };
+      }
+      
+      // Extract statistics - backend returns full object
+      let statistics = result?.statistics || result;
+      
+      // If structure doesn't match, fallback to defaults
+      if (!statistics || typeof statistics !== 'object') {
+        statistics = ResellerOrderService.getDefaultStatistics();
       }
       
       return {
         success: true,
-        health: result?.data || result
+        statistics
       };
       
     } catch (error) {
-      console.error('❌ [OrderService] Health check error:', error);
-      throw ResellerOrderService.handleApiError(error);
+      console.error('❌ [OrderService] Get order statistics error:', error);
+      
+      // Always return default stats on error (prevents UI crash)
+      return {
+        success: true,
+        statistics: ResellerOrderService.getDefaultStatistics()
+      };
     }
   }
 
@@ -1192,6 +861,12 @@ static async getOrderStatistics(filters = {}) {
       };
       localStorage.setItem(cacheKey, JSON.stringify(cacheData));
       console.log('💾 [OrderService] Cached order:', order.id);
+      
+      // Also cache by order number if available
+      if (order.orderNumber) {
+        const orderNumberKey = `reseller_order_${order.orderNumber}`;
+        localStorage.setItem(orderNumberKey, JSON.stringify(cacheData));
+      }
     } catch (error) {
       console.warn('[OrderService] Failed to cache order:', error);
     }
@@ -1209,11 +884,31 @@ static async getOrderStatistics(filters = {}) {
     return `reseller_orders_list_${JSON.stringify(sortedFilters)}`;
   }
 
+
   // Clear order cache
   static clearOrderCache(orderId) {
     try {
       localStorage.removeItem(`reseller_order_${orderId}`);
       console.log('🗑️ [OrderService] Cleared cache for order:', orderId);
+      
+      // Also try to clear by order number if it's a UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(orderId)) {
+        // If it's not a UUID, it might be an order number
+        // Try to find the cached order and clear its UUID too
+        const cacheKey = `reseller_order_${orderId}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const cacheData = JSON.parse(cached);
+            if (cacheData.order?.id) {
+              localStorage.removeItem(`reseller_order_${cacheData.order.id}`);
+            }
+          } catch (e) {
+            // Ignore
+          }
+        }
+      }
     } catch (error) {
       console.warn('[OrderService] Failed to clear order cache:', error);
     }
@@ -1235,20 +930,7 @@ static async getOrderStatistics(filters = {}) {
       console.warn('[OrderService] Failed to clear orders cache:', error);
     }
   }
-
   // ============== HELPER METHODS ==============
-
-  // Encrypt order data (optional - backend handles encryption via middleware)
-  static async encryptOrderData(orderData) {
-    try {
-      // You can encrypt sensitive data here if needed
-      // Currently, encryption middleware handles this on the backend
-      return orderData;
-    } catch (error) {
-      console.warn('[OrderService] Order data encryption failed, sending plain:', error);
-      return orderData;
-    }
-  }
 
   // Clear session data
   static clearSessionData() {
@@ -1308,7 +990,6 @@ static async getOrderStatistics(filters = {}) {
       
       switch (status) {
         case 400:
-          // Handle specific order errors
           if (data?.error === 'INSUFFICIENT_STOCK') {
             return new Error('Insufficient stock available for one or more items.');
           } else if (data?.error === 'INSUFFICIENT_BALANCE') {
@@ -1318,7 +999,6 @@ static async getOrderStatistics(filters = {}) {
           }
           return new Error(data?.message || 'Bad request. Please check your order data.');
         case 401:
-          // Clear session data
           ResellerOrderService.clearSessionData();
           return new Error('Your session has expired. Please login again.');
         case 403:
@@ -1339,28 +1019,26 @@ static async getOrderStatistics(filters = {}) {
     } else {
       return error;
     }
-  }
-
-  // ============== FORMATTING & UTILITY METHODS ==============
+}
 
   // Format price with currency
   static formatPrice(amount, currencyCode) {
     try {
-        if (!amount && amount !== 0) return 'N/A';
-        
-        const amountNum = typeof amount === 'string' ? parseFloat(amount) : amount;
-        
-        if (isNaN(amountNum)) return 'Invalid amount';
-        
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: currencyCode || 'USD',
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        }).format(amountNum);
-      } catch (error) {
-        return `${currencyCode || 'USD'} ${amount}`;
-      }
+      if (!amount && amount !== 0) return 'N/A';
+      
+      const amountNum = typeof amount === 'string' ? parseFloat(amount) : amount;
+      
+      if (isNaN(amountNum)) return 'Invalid amount';
+      
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currencyCode || 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amountNum);
+    } catch (error) {
+      return `${currencyCode || 'USD'} ${amount}`;
+    }
   }
 
   // Check if order can be cancelled
@@ -1371,201 +1049,7 @@ static async getOrderStatistics(filters = {}) {
     return cancellableStatuses.includes(order.status);
   }
 
-  // Calculate discount percentage
-  static calculateDiscountPercentage(originalAmount, finalAmount) {
-    if (!originalAmount || !finalAmount || originalAmount <= finalAmount) {
-        return 0;
-      }
-      
-      const discount = originalAmount - finalAmount;
-      const percentage = (discount / originalAmount) * 100;
-      return Math.round(percentage * 100) / 100;
-  }
-
-  // Get order timeline
-  static getOrderTimeline(order) {
-    if (!order) return [];
-    
-    const timeline = [];
-    
-    if (order.createdAt) {
-      timeline.push({
-        event: 'Order Created',
-        timestamp: order.createdAt,
-        description: `Order ${order.orderNumber} was created`
-      });
-    }
-    
-    if (order.updatedAt && order.status !== 'PENDING') {
-      timeline.push({
-        event: `Order ${order.status}`,
-        timestamp: order.updatedAt,
-        description: `Order was ${order.status.toLowerCase()}`
-      });
-    }
-    
-    // Add voucher assignment events
-    if (order.items) {
-      order.items.forEach(item => {
-        if (item.vouchers && item.vouchers.length > 0) {
-          item.vouchers.forEach(voucher => {
-            if (voucher.soldAt || voucher.assignedAt) {
-              timeline.push({
-                event: 'Voucher Assigned',
-                timestamp: voucher.soldAt || voucher.assignedAt,
-                description: `Voucher ${voucher.code} was assigned to order`
-              });
-            }
-          });
-        }
-      });
-    }
-    
-    // Sort timeline by timestamp
-    return timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  }
-
-  // Validate order items structure
-  static validateOrderItems(items) {
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return { valid: false, error: 'Order must contain at least one item' };
-    }
-
-    const validatedItems = [];
-    
-    for (const item of items) {
-      if (!item.productId) {
-        return { valid: false, error: 'Each item must have productId' };
-      }
-
-      // Check for nested denominations structure
-      if (item.denominations && Array.isArray(item.denominations)) {
-        if (item.denominations.length === 0) {
-          return { valid: false, error: 'Each item must have at least one denomination' };
-        }
-
-        const validatedDenominations = [];
-        for (const denomItem of item.denominations) {
-          if (!denomItem.denominationId || !denomItem.quantity) {
-            return { valid: false, error: 'Each denomination must have denominationId and quantity' };
-          }
-
-          if (denomItem.quantity <= 0 || !Number.isInteger(denomItem.quantity)) {
-            return { valid: false, error: 'Quantity must be a positive integer' };
-          }
-
-          validatedDenominations.push({
-            productId: item.productId,
-            denominationId: denomItem.denominationId,
-            quantity: denomItem.quantity
-          });
-        }
-
-        validatedItems.push({
-          productId: item.productId,
-          denominations: validatedDenominations
-        });
-      } else {
-        // Handle flat structure
-        if (!item.denominationId || !item.quantity) {
-          return { valid: false, error: 'Each item must have denominationId and quantity' };
-        }
-
-        if (item.quantity <= 0 || !Number.isInteger(item.quantity)) {
-          return { valid: false, error: 'Quantity must be a positive integer' };
-        }
-
-        validatedItems.push({
-          productId: item.productId,
-          denominationId: item.denominationId,
-          quantity: item.quantity
-        });
-      }
-    }
-
-    return { valid: true, items: validatedItems };
-  }
-
-  // Calculate order total
-  static calculateOrderTotal(items, pricingInfo) {
-    if (!items || !pricingInfo) return 0;
-    
-    let total = 0;
-    
-    items.forEach(item => {
-      if (item.denominations) {
-        item.denominations.forEach(denom => {
-          const price = pricingInfo[denom.denominationId];
-          if (price) {
-            total += price.discountedPrice * denom.quantity;
-          }
-        });
-      } else {
-        const price = pricingInfo[item.denominationId];
-        if (price) {
-          total += price.discountedPrice * item.quantity;
-        }
-      }
-    });
-    
-    return total;
-  }
-
-  // Format order summary
-  static formatOrderSummary(order) {
-    if (!order) return null;
-    
-    return {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      invoiceId: order.invoiceId,
-      status: order.status,
-      totalAmount: parseFloat(order.totalPrice || 0),
-      currency: order.currency?.code || 'USD',
-      createdAt: order.createdAt,
-      itemCount: order.items?.length || 0,
-      voucherCount: order.items?.reduce((sum, item) => sum + (item.vouchers?.length || 0), 0) || 0
-    };
-  }
-
-  // Get order status info
-  static getOrderStatusInfo(status) {
-    const statusConfig = {
-      'PENDING': { label: 'Pending', color: 'warning', icon: 'clock' },
-      'PROCESSING': { label: 'Processing', color: 'info', icon: 'sync' },
-      'COMPLETED': { label: 'Completed', color: 'success', icon: 'check' },
-      'CANCELLED': { label: 'Cancelled', color: 'error', icon: 'x' },
-      'FAILED': { label: 'Failed', color: 'error', icon: 'alert' }
-    };
-    
-    return statusConfig[status] || { label: status, color: 'default', icon: 'help' };
-  }
-
-  // Format order items for display
-  static formatOrderItems(items) {
-    if (!items) return [];
-    
-    return items.map(item => ({
-      id: item.id,
-      productId: item.productId,
-      productName: item.product?.name || 'Unknown Product',
-      productImage: item.product?.images?.[0]?.url || null,
-      denominationId: item.denominationId,
-      denominationAmount: parseFloat(item.denomination?.amount || 0),
-      quantity: item.quantity,
-      unitPrice: parseFloat(item.unitPrice || 0),
-      totalPrice: parseFloat(item.totalPrice || 0),
-      discountApplied: parseFloat(item.discountApplied || 0),
-      voucherCount: item.vouchers?.length || 0,
-      vouchers: item.vouchers?.map(v => ({
-        id: v.id,
-        code: v.code,
-        status: v.status
-      })) || []
-    }));
-  }
-
-  // Get product price range
+  // Get product price range (for consistency with ProductService)
   static getProductPriceRange(product) {
     if (!product?.denominations || product.denominations.length === 0) {
       return null;
@@ -1598,26 +1082,173 @@ static async getOrderStatistics(filters = {}) {
     };
   }
 
-  // Check if product is in stock
-  static isProductInStock(product) {
-    if (!product?.denominations || product.denominations.length === 0) {
-      return false;
+  // Format order summary - FIXED VERSION
+  static formatOrderSummary(order) {
+    if (!order) return null;
+    
+    try {
+      // Extract items data
+      const items = order.items?.map(item => ({
+        productName: item.product?.name || 'Unknown Product',
+        denominationAmount: item.denomination?.amount || item.unitPrice || 0,
+        quantity: item.quantity || 0,
+        unitPrice: item.unitPrice || 0,
+        totalPrice: item.totalPrice || 0,
+        currency: item.currency?.code || 'USD'
+      })) || [];
+
+      const totalItems = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      
+      // FIXED: Safely calculate totalAmount
+      let totalAmount = order.totalPrice || 
+                       items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+      
+      // Ensure totalAmount is a number
+      if (typeof totalAmount === 'string') {
+        totalAmount = parseFloat(totalAmount);
+      }
+      
+      if (isNaN(totalAmount)) {
+        totalAmount = 0;
+      }
+      
+      const currency = order.currency?.code || 
+                      order.currencyCode || 
+                      order.currencyId?.code || 
+                      'USD';
+      
+      const summary = {
+        orderId: order.id || order.orderId,
+        invoiceId: order.invoiceId || order.orderNumber,
+        status: order.status || 'UNKNOWN',
+        totalAmount: Number(totalAmount.toFixed(2)),
+        totalItems,
+        items,
+        currency,
+        createdAt: order.createdAt || new Date().toISOString(),
+        updatedAt: order.updatedAt || new Date().toISOString(),
+        canCancel: this.canCancelOrder(order),
+        formattedTotal: this.formatPrice(totalAmount, currency)
+      };
+
+      return summary;
+    } catch (error) {
+      console.error('❌ Error formatting order summary:', error);
+      // Return a safe default summary
+      return {
+        orderId: order?.id || order?.orderId || 'N/A',
+        invoiceId: order?.invoiceId || order?.orderNumber || 'N/A',
+        status: order?.status || 'UNKNOWN',
+        totalAmount: 0,
+        totalItems: 0,
+        items: [],
+        currency: 'USD',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        canCancel: false,
+        formattedTotal: '$0.00'
+      };
+    }
+  }
+  
+  // Format order items
+  static formatOrderItems(items) {
+    if (!items || !Array.isArray(items)) return [];
+    
+    return items.map(item => ({
+      id: item.id,
+      productId: item.productId,
+      product: item.product || { name: 'Unknown Product' },
+      productName: item.product?.name || 'Unknown Product',
+      denominationId: item.denominationId,
+      denominationAmount: item.denomination?.amount || item.unitPrice || 0,
+      quantity: item.quantity || 0,
+      unitPrice: item.unitPrice || 0,
+      originalUnitPrice: item.originalUnitPrice || item.unitPrice || 0,
+      totalPrice: item.totalPrice || 0,
+      discountApplied: item.discountApplied || 0,
+      vouchers: item.vouchers || []
+    }));
+  }
+  
+  // Calculate discount percentage
+  static calculateDiscountPercentage(originalPrice, discountedPrice) {
+    if (!originalPrice || originalPrice <= 0 || !discountedPrice) return 0;
+    
+    const original = typeof originalPrice === 'string' ? parseFloat(originalPrice) : originalPrice;
+    const discounted = typeof discountedPrice === 'string' ? parseFloat(discountedPrice) : discountedPrice;
+    
+    if (isNaN(original) || isNaN(discounted) || original <= 0) return 0;
+    
+    return Math.round(((original - discounted) / original) * 100);
+  }
+  
+  // Get order timeline
+  static getOrderTimeline(order) {
+    if (!order) return [];
+    
+    const timeline = [];
+    
+    if (order.createdAt) {
+      timeline.push({
+        event: 'Order Created',
+        timestamp: order.createdAt,
+        description: 'Order was successfully placed'
+      });
     }
     
-    return product.denominations.some(denom => 
-      denom.status === 'ACTIVE' && 
-      (denom.stockCount === undefined || denom.stockCount > 0)
-    );
+    if (order.processingAt) {
+      timeline.push({
+        event: 'Processing Started',
+        timestamp: order.processingAt,
+        description: 'Order processing began'
+      });
+    }
+    
+    if (order.completedAt) {
+      timeline.push({
+        event: 'Order Completed',
+        timestamp: order.completedAt,
+        description: 'Order was completed successfully'
+      });
+    }
+    
+    if (order.cancelledAt) {
+      timeline.push({
+        event: 'Order Cancelled',
+        timestamp: order.cancelledAt,
+        description: 'Order was cancelled'
+      });
+    }
+    
+    return timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   }
-
-  // Check if user can purchase product
-  static canPurchaseProduct(product, walletBalance = 0) {
-    if (!product || !this.isProductInStock(product)) return false;
-    
-    const priceRange = this.getProductPriceRange(product);
-    if (!priceRange) return false;
-    
-    return walletBalance >= priceRange.min;
+  
+  // Get default statistics
+  static getDefaultStatistics() {
+    return {
+      summary: {
+        totalOrders: 0,
+        totalRevenue: 0,
+        completedOrders: 0,
+        pendingOrders: 0,
+        cancelledOrders: 0,
+        completionRate: 0,
+        currency: 'USD'
+      },
+      statusBreakdown: [],
+      monthlyStatistics: []
+    };
+  }
+  
+  // Get default wallet balance
+  static getDefaultWalletBalance() {
+    return {
+      totalBalance: 0,
+      availableBalance: 0,
+      wallets: [],
+      defaultCurrency: 'USD'
+    };
   }
 }
 
