@@ -112,8 +112,8 @@ async function encryptAES(data, aesKeyHex) {
     );
     
     return {
-      ciphertext: new Uint8Array(encrypted),
-      iv: iv,
+      ciphertext: uint8ArrayToBase64(new Uint8Array(encrypted)),
+      iv: uint8ArrayToBase64(iv),
     };
   } catch (error) {
     console.error("Error encrypting with AES:", error);
@@ -122,7 +122,7 @@ async function encryptAES(data, aesKeyHex) {
 }
 
 // Decrypt AES data
-async function decryptAES(ciphertextUint8, aesKeyHex, ivUint8) {
+async function decryptAES(ciphertextBase64, aesKeyHex, ivBase64) {
   try {
     const aesKey = await window.crypto.subtle.importKey(
       "raw",
@@ -132,14 +132,24 @@ async function decryptAES(ciphertextUint8, aesKeyHex, ivUint8) {
       ["decrypt"]
     );
     
+    const ciphertext = base64ToUint8Array(ciphertextBase64);
+    const iv = base64ToUint8Array(ivBase64);
+    
     const decrypted = await window.crypto.subtle.decrypt(
-      { name: "AES-CBC", iv: ivUint8 },
+      { name: "AES-CBC", iv: iv },
       aesKey,
-      ciphertextUint8
+      ciphertext
     );
     
     const textDecoder = new TextDecoder();
-    return JSON.parse(textDecoder.decode(decrypted));
+    const decryptedText = textDecoder.decode(decrypted);
+    
+    try {
+      return JSON.parse(decryptedText);
+    } catch (parseError) {
+      console.warn("Failed to parse decrypted data as JSON, returning as text:", parseError);
+      return decryptedText;
+    }
   } catch (error) {
     console.error("Error decrypting AES:", error);
     throw error;
@@ -235,24 +245,41 @@ async function exportPrivateKey(privateKey) {
 // Decrypt server response (handles both encrypted and plain responses)
 async function decryptServerResponse(response, privateKey) {
   try {
-    // If response is already decrypted or encryption failed
+    console.log("🔐 Decrypting server response:", {
+      encrypted: !!(response.encryptedKey && response.ciphertext && response.iv),
+      encryptedKey: !!response.encryptedKey,
+      ciphertext: !!response.ciphertext,
+      iv: !!response.iv
+    });
+
+    // If response is not encrypted, return as-is
     if (!response.encryptedKey || !response.ciphertext || !response.iv) {
+      console.log("📨 Response is not encrypted, returning as-is");
       return response;
     }
-    
+
     // Decrypt AES key
     const aesKeyHex = await decryptAESKey(response.encryptedKey, privateKey);
     
     // Decrypt data
     const decryptedData = await decryptAES(
-      base64ToUint8Array(response.ciphertext),
+      response.ciphertext,
       aesKeyHex,
-      base64ToUint8Array(response.iv)
+      response.iv
     );
+
+    console.log("✅ Decryption successful, data type:", typeof decryptedData);
     
     return decryptedData;
   } catch (error) {
-    console.error("Error decrypting server response:", error);
+    console.error("❌ Error decrypting server response:", error);
+    
+    // Check if we have fallback plain data
+    if (response.data) {
+      console.log("🔄 Using fallback plain data from response.data");
+      return response.data;
+    }
+    
     return response; // Return as-is if decryption fails
   }
 }
@@ -267,22 +294,36 @@ async function initResellerEncryption() {
     
     if (!keys) {
       console.log("🔑 Generating new RSA key pair...");
-      keys = await generateKeyPair();
+      const keyPair = await generateKeyPair();
       
       // Save keys for future use
-      await saveKeyPair(keys.privateKey, keys.publicKey);
+      await saveKeyPair(keyPair.privateKey, keyPair.publicKey);
+      
+      keys = {
+        privateKey: keyPair.privateKey,
+        publicKey: keyPair.publicKey
+      };
     }
     
     // Store in session
     sessionKeys.privateKey = keys.privateKey;
     sessionKeys.publicKey = keys.publicKey;
     
-    console.log("✅ Reseller encryption initialized");
+    console.log("✅ Reseller encryption initialized", {
+      hasPrivateKey: !!sessionKeys.privateKey,
+      hasPublicKey: !!sessionKeys.publicKey
+    });
     return true;
   } catch (error) {
     console.error("❌ Failed to initialize reseller encryption:", error);
     throw error;
   }
+}
+
+// Generate random AES key
+function generateAESKey() {
+  const randomBytes = window.crypto.getRandomValues(new Uint8Array(32));
+  return uint8ArrayToHex(randomBytes);
 }
 
 // Helper functions
@@ -305,6 +346,9 @@ function base64ToArrayBuffer(base64) {
 }
 
 function hexStringToUint8Array(hexString) {
+  if (!hexString || hexString.length % 2 !== 0) {
+    throw new Error("Invalid hex string");
+  }
   return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 }
 
@@ -327,12 +371,6 @@ function uint8ArrayToBase64(uint8Array) {
     binary += String.fromCharCode(uint8Array[i]);
   }
   return btoa(binary);
-}
-
-// Generate random AES key
-function generateAESKey() {
-  const randomBytes = window.crypto.getRandomValues(new Uint8Array(32));
-  return uint8ArrayToHex(randomBytes);
 }
 
 export {

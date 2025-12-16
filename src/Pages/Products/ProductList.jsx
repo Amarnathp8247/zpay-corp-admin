@@ -1,622 +1,408 @@
-// src/components/dashboard/ProductList.jsx
-import { useState, useEffect } from "react";
+// src/pages/Products/ProductList.jsx
+import { useState, useEffect, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import ResellerProductService from "../../services/product.service";
+import AuthContext from "../../context/AuthContext";
 import "./Product.css";
 
 export default function ProductList() {
   const [products, setProducts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filters, setFilters] = useState({
-    page: 1,
-    limit: 12,
-    platform: "",
-    search: "",
-    status: "ACTIVE"
-  });
-  const [pagination, setPagination] = useState({
-    current: 1,
-    totalPages: 1,
-    totalItems: 0,
-    itemsPerPage: 12
-  });
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState("asc");
 
-  const fetchProducts = async (filtersToUse = filters) => {
+  const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
+
+  // Fetch products
+  const fetchProducts = async () => {
     try {
-      setIsLoading(true);
+      setLoading(true);
       setError(null);
       
-      console.log("📡 Fetching products with filters:", filtersToUse);
+      const result = await ResellerProductService.getProductList();
       
-      // Try cached first
-      const cached = ResellerProductService.getCachedProductList(filtersToUse);
-      if (cached) {
-        console.log("📦 Using cached products:", cached.length);
-        setProducts(cached);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Fetch from API
-      console.log("🌐 Making API request...");
-      const result = await ResellerProductService.getProductList(filtersToUse);
-      console.log("✅ API Result:", {
-        success: result?.success,
-        hasProducts: !!result?.products,
-        resultType: typeof result,
-        resultKeys: Object.keys(result || {})
-      });
-      
-      if (result?.success) {
-        // Handle the new response format from the updated service
-        let productList = [];
-        let paginationData = {};
+      if (result.success) {
+        const productsData = result.products || [];
+        setProducts(productsData);
+        setFilteredProducts(productsData);
         
-        if (result.products && Array.isArray(result.products)) {
-          productList = result.products;
-          paginationData = result.pagination || {};
-        } else if (result.data?.products && Array.isArray(result.data.products)) {
-          productList = result.data.products;
-          paginationData = result.data.pagination || {};
-        } else if (Array.isArray(result)) {
-          productList = result;
-        } else if (Array.isArray(result.data)) {
-          productList = result.data;
-        } else if (result.data && Array.isArray(result.data)) {
-          productList = result.data;
-        }
-        
-        console.log(`📊 Found ${productList?.length || 0} products`, {
-          productList: productList?.slice(0, 2), // Show first 2 for debugging
-          paginationData
-        });
-        
-        if (productList && productList.length > 0) {
-          setProducts(productList);
-          
-          // Set pagination data
-          if (paginationData && Object.keys(paginationData).length > 0) {
-            setPagination({
-              current: paginationData.currentPage || paginationData.current || filtersToUse.page,
-              totalPages: paginationData.totalPages || Math.ceil((paginationData.totalItems || productList.length) / filtersToUse.limit),
-              totalItems: paginationData.totalItems || productList.length,
-              itemsPerPage: filtersToUse.limit
-            });
-          } else {
-            // Create default pagination
-            setPagination({
-              current: filtersToUse.page,
-              totalPages: Math.ceil(productList.length / filtersToUse.limit),
-              totalItems: productList.length,
-              itemsPerPage: filtersToUse.limit
-            });
-          }
-          
-          // Cache the product list
-          ResellerProductService.cacheProductList(productList, filtersToUse);
-        } else {
-          console.log("📭 No products found");
-          setProducts([]);
-          setPagination({
-            current: 1,
-            totalPages: 1,
-            totalItems: 0,
-            itemsPerPage: filtersToUse.limit
-          });
-        }
+        // Extract unique categories
+        const uniqueCategories = ResellerProductService.getUniqueCategories(productsData);
+        setCategories(uniqueCategories);
       } else {
-        const errorMessage = result?.message || result?.error || "Failed to fetch products";
-        console.error("❌ API returned failure:", {
-          message: errorMessage,
-          result
-        });
-        throw new Error(errorMessage);
+        setError(result.message || "Failed to fetch products");
       }
     } catch (err) {
-      console.error("❌ Error fetching products:", {
-        message: err.message,
-        stack: err.stack,
-        filters: filtersToUse
-      });
+      console.error("Failed to fetch products:", err);
       setError(err.message || "Failed to load products. Please try again.");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    console.log("🚀 ProductList component mounted");
-    
-    // Test encryption if in development
-    if (process.env.NODE_ENV === 'development') {
-      const testEncryption = async () => {
-        try {
-          console.log("🧪 Running encryption test...");
-          const testResult = await ResellerProductService.testEncryption();
-          console.log("🧪 Encryption test result:", testResult);
-        } catch (testError) {
-          console.error("❌ Encryption test failed:", testError);
-        }
-      };
-      testEncryption();
+  // Fetch wallet balance
+  const fetchWalletBalance = async () => {
+    try {
+      const result = await ResellerProductService.getWalletBalance();
+      if (result?.success) {
+        setWalletBalance(result.balance || 0);
+      }
+    } catch (err) {
+      console.warn("Could not fetch wallet balance:", err);
+    }
+  };
+
+  // Handle buy button click
+  const handleBuyClick = (product) => {
+    if (!user) {
+      alert("Please login to purchase products");
+      navigate("/login");
+      return;
     }
     
+    setSelectedProduct(product);
+    setIsBuyModalOpen(true);
+  };
+
+  // Handle order created
+  const handleOrderCreated = async (orderResult) => {
+    console.log("✅ Order created successfully:", orderResult);
+    
+    // Show success message
+    alert(`Order #${orderResult.orderNumber || orderResult.id} created successfully!`);
+    
+    // Refresh wallet balance
+    await fetchWalletBalance();
+    
+    // Refresh products (to update stock)
+    await fetchProducts();
+    
+    // Close modal
+    setIsBuyModalOpen(false);
+    setSelectedProduct(null);
+    
+    // Navigate to orders page
+    navigate("/dashboard/orders");
+  };
+
+  // Handle search
+  const handleSearch = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    
+    filterProducts(value, selectedCategory, sortBy, sortOrder);
+  };
+
+  // Handle category filter
+  const handleCategoryChange = (e) => {
+    const categoryId = e.target.value;
+    setSelectedCategory(categoryId);
+    
+    filterProducts(searchTerm, categoryId, sortBy, sortOrder);
+  };
+
+  // Handle sort
+  const handleSortChange = (e) => {
+    const value = e.target.value;
+    let sortBy = "name";
+    let sortOrder = "asc";
+    
+    switch (value) {
+      case "price-low":
+        sortBy = "price";
+        sortOrder = "asc";
+        break;
+      case "price-high":
+        sortBy = "price";
+        sortOrder = "desc";
+        break;
+      case "name-asc":
+        sortBy = "name";
+        sortOrder = "asc";
+        break;
+      case "name-desc":
+        sortBy = "name";
+        sortOrder = "desc";
+        break;
+      default:
+        sortBy = "name";
+        sortOrder = "asc";
+    }
+    
+    setSortBy(sortBy);
+    setSortOrder(sortOrder);
+    
+    filterProducts(searchTerm, selectedCategory, sortBy, sortOrder);
+  };
+
+  // Filter and sort products
+  const filterProducts = (search, category, sortBy, sortOrder) => {
+    let filtered = [...products];
+    
+    // Apply search filter
+    if (search.trim()) {
+      const searchLower = search.toLowerCase();
+      filtered = filtered.filter(product => 
+        product.name.toLowerCase().includes(searchLower) ||
+        product.description?.toLowerCase().includes(searchLower) ||
+        product.sku?.toLowerCase().includes(searchLower) ||
+        product.brand?.name?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Apply category filter
+    if (category && category !== "all") {
+      filtered = filtered.filter(product => 
+        product.categories?.some(cat => 
+          cat.id === category || cat.categoryId === category
+        )
+      );
+    }
+    
+    // Apply sorting
+    filtered = ResellerProductService.sortProducts(filtered, sortBy, sortOrder);
+    
+    setFilteredProducts(filtered);
+  };
+
+  // Initialize
+  useEffect(() => {
     fetchProducts();
+    fetchWalletBalance();
   }, []);
 
-  useEffect(() => {
-    const debounceTimer = setTimeout(() => {
-      fetchProducts();
-    }, 500);
-    
-    return () => clearTimeout(debounceTimer);
-  }, [filters]);
-
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-      page: 1
-    }));
+  // Format price
+  const formatPrice = (amount, currency = "USD") => {
+    return ResellerProductService.formatPrice(amount, currency);
   };
 
-  const handleSearch = (searchTerm) => {
-    handleFilterChange("search", searchTerm);
-  };
-
-  const handlePageChange = (page) => {
-    if (page >= 1 && page <= pagination.totalPages) {
-      setFilters(prev => ({
-        ...prev,
-        page
-      }));
-      
-      // Scroll to top when changing pages
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleItemsPerPageChange = (itemsPerPage) => {
-    const newLimit = parseInt(itemsPerPage);
-    setFilters(prev => ({
-      ...prev,
-      limit: newLimit,
-      page: 1
-    }));
-  };
-
-  const handlePlatformFilter = (platform) => {
-    handleFilterChange("platform", platform);
-  };
-
-  // Generate page numbers for pagination
-  const generatePageNumbers = () => {
-    const pages = [];
-    const totalPages = pagination.totalPages;
-    const currentPage = pagination.current;
-    
-    // Always show first page
-    pages.push(1);
-    
-    if (totalPages <= 7) {
-      // Show all pages if total pages <= 7
-      for (let i = 2; i <= totalPages; i++) {
-        pages.push(i);
-      }
-    } else {
-      if (currentPage <= 4) {
-        // Show first 5 pages, then ellipsis, then last page
-        for (let i = 2; i <= 5; i++) {
-          pages.push(i);
-        }
-        pages.push('ellipsis');
-        pages.push(totalPages);
-      } else if (currentPage >= totalPages - 3) {
-        // Show first page, ellipsis, then last 5 pages
-        pages.push('ellipsis');
-        for (let i = totalPages - 4; i <= totalPages; i++) {
-          pages.push(i);
-        }
-      } else {
-        // Show first page, ellipsis, current-1, current, current+1, ellipsis, last page
-        pages.push('ellipsis');
-        pages.push(currentPage - 1);
-        pages.push(currentPage);
-        pages.push(currentPage + 1);
-        pages.push('ellipsis');
-        pages.push(totalPages);
-      }
-    }
-    
-    return pages;
-  };
-
-  // Loading state
-  if (isLoading) {
+  // Render loading state
+  if (loading && products.length === 0) {
     return (
-      <div className="product-list-page">
-        <div className="container">
-          <div className="page-header">
-            <h1>Product Catalog</h1>
-            <p>Loading your products...</p>
-          </div>
-          <div className="loading-container">
-            <div className="spinner"></div>
-            <p>Fetching products...</p>
-            <p className="loading-subtext">Initializing encryption...</p>
-          </div>
-        </div>
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Loading products...</p>
       </div>
     );
   }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="product-list-page">
-        <div className="container">
-          <div className="error-container">
-            <h2>⚠️ Unable to Load Products</h2>
-            <p className="error-message">{error}</p>
-            <div className="error-actions">
-              <button 
-                className="retry-btn"
-                onClick={() => fetchProducts()}
-              >
-                Retry
-              </button>
-              <button 
-                className="login-btn"
-                onClick={() => {
-                  // Clear storage and redirect to login
-                  localStorage.removeItem('resellerToken');
-                  localStorage.removeItem('resellerSessionId');
-                  localStorage.removeItem('resellerProfile');
-                  window.location.href = '/login';
-                }}
-              >
-                Go to Login
-              </button>
-              <button 
-                className="debug-btn"
-                onClick={async () => {
-                  try {
-                    console.log("🔍 Running debug test...");
-                    const testResult = await ResellerProductService.testEncryption();
-                    console.log("🔍 Debug test result:", testResult);
-                    alert(`Debug Info:\nEncryption: ${testResult.encryptionWorking ? '✓' : '✗'}\nDecryption: ${testResult.decryptionWorking ? '✓' : '✗'}\nMessage: ${testResult.message}`);
-                  } catch (debugError) {
-                    console.error("❌ Debug test failed:", debugError);
-                    alert(`Debug failed: ${debugError.message}`);
-                  }
-                }}
-              >
-                Debug
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Extract unique platforms from products for filtering
-  const availablePlatforms = [...new Set(products.flatMap(p => p.platform || []))].filter(Boolean);
 
   return (
     <div className="product-list-page">
-      <div className="container">
-        {/* Header */}
-        <div className="page-header">
-          <div className="header-content">
-            <div>
-              <h1>Product Catalog</h1>
-            
-             
-            </div>
-            <div className="header-actions">
-              <button 
-                className="refresh-btn"
-                onClick={() => {
-                  ResellerProductService.clearProductCache();
-                  fetchProducts();
-                }}
-              >
-                ↻ Refresh
-              </button>
-            </div>
-          </div>
+      {/* Page Header */}
+      <div className="page-header">
+        <div className="header-content">
+          <h1>Products</h1>
+          <p>Browse and purchase products from our catalog</p>
         </div>
-
-        {/* Filters */}
-        <div className="filters-section">
-          <div className="filters-grid">
-            <div className="search-box">
-              <input
-                type="text"
-                placeholder="Search products by name or description..."
-                value={filters.search}
-                onChange={(e) => handleSearch(e.target.value)}
-                className="search-input"
-              />
-              <button className="search-btn">🔍</button>
-            </div>
-            
-            {availablePlatforms.length > 0 && (
-              <div className="platform-filters">
-                <label>Platform:</label>
-                <select 
-                  value={filters.platform} 
-                  onChange={(e) => handlePlatformFilter(e.target.value)}
-                  className="platform-select"
-                >
-                  <option value="">All Platforms</option>
-                  {availablePlatforms.map(platform => (
-                    <option key={platform} value={platform}>{platform}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+        
+        <div className="wallet-section">
+          <div className="wallet-info">
+            <span className="wallet-label">Available Balance:</span>
+            <span className="wallet-amount">
+              {formatPrice(walletBalance, "USD")}
+            </span>
           </div>
+          <button 
+            className="wallet-btn"
+            onClick={() => navigate("/dashboard/wallet")}
+          >
+            Add Funds
+          </button>
         </div>
-
-        {/* Products Grid */}
-        {products.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📦</div>
-            <h2>No Products Found</h2>
-            <p>There are no products available in your catalog yet.</p>
-            <div className="empty-actions">
-              <button 
-                className="retry-btn"
-                onClick={() => fetchProducts()}
-              >
-                Try Again
-              </button>
-              <button 
-                className="clear-filters-btn"
-                onClick={() => {
-                  setFilters({
-                    page: 1,
-                    limit: 12,
-                    platform: "",
-                    search: "",
-                    status: "ACTIVE"
-                  });
-                }}
-              >
-                Clear Filters
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="products-grid">
-              {products.map((product) => {
-                if (!product || typeof product !== 'object') {
-                  console.warn('⚠️ Invalid product data:', product);
-                  return null;
-                }
-                
-                const priceRange = ResellerProductService.getProductPriceRange(product);
-                const isInStock = ResellerProductService.isProductInStock(product);
-                const availableDenominations = ResellerProductService.getAvailableDenominations(product);
-                
-                return (
-                  <div key={product.id || Math.random()} className="product-card">
-                    {/* Product Image */}
-                    <div className="product-image">
-                      {product.image?.url || (product.images && product.images.length > 0 && product.images[0]?.url) ? (
-                        <img
-                          src={product.image?.url || product.images[0].url}
-                          alt={product.image?.altText || product.images[0]?.altText || product.name || 'Product'}
-                          className="product-img"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.parentNode.querySelector('.image-placeholder').style.display = 'flex';
-                          }}
-                        />
-                      ) : (
-                        <div className="image-placeholder">
-                          {product.name?.charAt(0)?.toUpperCase() || 'P'}
-                        </div>
-                      )}
-                      
-                      <div className="product-badges">
-                        {!isInStock && <span className="badge out-of-stock">Out of Stock</span>}
-                        {product.status === 'ACTIVE' && <span className="badge active">Active</span>}
-                        {product.hasDiscount && <span className="badge discount">Discount</span>}
-                        {product.conversionApplied && <span className="badge converted">Converted</span>}
-                      </div>
-                      
-                      {product.brand?.logoUrl && (
-                        <div className="brand-logo">
-                          <img 
-                            src={product.brand.logoUrl} 
-                            alt={product.brand.name || 'Brand'} 
-                            className="brand-img"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="product-info">
-                      <div className="product-header">
-                        <h3 className="product-name">{product.name || 'Unnamed Product'}</h3>
-                        {product.sku && (
-                          <span className="product-sku">SKU: {product.sku}</span>
-                        )}
-                      </div>
-                      
-                      <p className="product-description">
-                        {product.description?.substring(0, 120) || 'No description available.'}
-                        {product.description?.length > 120 && '...'}
-                      </p>
-
-                      {/* Categories */}
-                      {product.categories && product.categories.length > 0 && (
-                        <div className="categories-section">
-                          <span className="categories-label">Categories: </span>
-                          <div className="categories-tags">
-                            {product.categories.slice(0, 2).map(category => (
-                              <span key={category.id || category.name} className="category-tag">
-                                {category.name}
-                              </span>
-                            ))}
-                            {product.categories.length > 2 && (
-                              <span className="category-tag more">+{product.categories.length - 2}</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Price */}
-                      <div className="price-section">
-                        {priceRange ? (
-                          <>
-                            <span className="price-label">Price: </span>
-                            <span className="price-value">
-                              {ResellerProductService.formatPrice(priceRange.min, product.displayCurrency || product.currency?.code || 'USD')}
-                              {priceRange.min !== priceRange.max && (
-                                <> - {ResellerProductService.formatPrice(priceRange.max, product.displayCurrency || product.currency?.code || 'USD')}</>
-                              )}
-                            </span>
-                            {product.conversionApplied && product.originalCurrency !== product.displayCurrency && (
-                              <span className="currency-note">
-                                (Converted from {product.originalCurrency})
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="price-unavailable">Price not available</span>
-                        )}
-                      </div>
-
-                      {/* Stock Info */}
-                      <div className="stock-section">
-                        <span className="stock-label">Stock: </span>
-                        <span className={`stock-value ${isInStock ? 'in-stock' : 'out-of-stock'}`}>
-                          {isInStock ? 'In Stock' : 'Out of Stock'}
-                        </span>
-                        {availableDenominations.length > 0 && (
-                          <span className="denominations-count">
-                            ({availableDenominations.length} denominations available)
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Platform */}
-                      {product.platform && product.platform.length > 0 && (
-                        <div className="platform-section">
-                          <span className="platform-label">Platform: </span>
-                          <div className="platform-tags">
-                            {product.platform.slice(0, 2).map((platform, index) => (
-                              <span key={index} className="platform-tag">
-                                {platform}
-                              </span>
-                            ))}
-                            {product.platform.length > 2 && (
-                              <span className="platform-tag more">+{product.platform.length - 2}</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="product-actions">
-                        <button 
-                          className="view-btn primary"
-                          onClick={() => {
-                            if (product.id) {
-                              window.location.href = `/dashboard/products/${product.id}`;
-                            }
-                          }}
-                        >
-                          View Details
-                        </button>
-                        <button 
-                          className="quick-buy-btn"
-                          onClick={() => {
-                            console.log('Quick buy:', product.id);
-                            // Add to cart or quick purchase logic here
-                          }}
-                          disabled={!isInStock || !product.companyProduct?.canSell}
-                        >
-                          Quick Buy
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }).filter(Boolean)}
-            </div>
-
-            {/* Enhanced Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="pagination">
-                <div className="pagination-container">
-                  <button 
-                    className="pagination-btn"
-                    onClick={() => handlePageChange(pagination.current - 1)}
-                    disabled={pagination.current === 1}
-                  >
-                    ← Previous
-                  </button>
-                  
-                  {/* Page Numbers */}
-                  <div className="pagination-numbers">
-                    {generatePageNumbers().map((page, index) => (
-                      page === 'ellipsis' ? (
-                        <span key={`ellipsis-${index}`} className="page-number ellipsis">
-                          ...
-                        </span>
-                      ) : (
-                        <button
-                          key={page}
-                          className={`page-number ${pagination.current === page ? 'active' : ''}`}
-                          onClick={() => handlePageChange(page)}
-                        >
-                          {page}
-                        </button>
-                      )
-                    ))}
-                  </div>
-                  
-                  <button 
-                    className="pagination-btn"
-                    onClick={() => handlePageChange(pagination.current + 1)}
-                    disabled={pagination.current === pagination.totalPages}
-                  >
-                    Next →
-                  </button>
-                </div>
-                
-                <div className="pagination-info">
-                  Page {pagination.current} of {pagination.totalPages}
-                  <span className="total-items"> ({pagination.totalItems} total products)</span>
-                </div>
-                
-                <div className="pagination-options">
-                  <span className="pagination-label">Show:</span>
-                  <select 
-                    value={filters.limit}
-                    onChange={(e) => handleItemsPerPageChange(e.target.value)}
-                    className="pagination-select"
-                  >
-                    <option value="12">12 per page</option>
-                    <option value="24">24 per page</option>
-                    <option value="48">48 per page</option>
-                    <option value="96">96 per page</option>
-                  </select>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-       
       </div>
+
+      {/* Filters Section */}
+      <div className="filters-section">
+        <div className="search-box">
+          <input
+            type="text"
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={handleSearch}
+            className="search-input"
+          />
+          <span className="search-icon">🔍</span>
+        </div>
+        
+        <div className="filter-controls">
+          <div className="filter-group">
+            <label htmlFor="category">Category:</label>
+            <select 
+              id="category"
+              value={selectedCategory}
+              onChange={handleCategoryChange}
+              className="filter-select"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(category => (
+                <option key={category.id || category.categoryId} value={category.id || category.categoryId}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="filter-group">
+            <label htmlFor="sort">Sort by:</label>
+            <select 
+              id="sort"
+              onChange={handleSortChange}
+              className="filter-select"
+            >
+              <option value="name-asc">Name (A-Z)</option>
+              <option value="name-desc">Name (Z-A)</option>
+              <option value="price-low">Price (Low to High)</option>
+              <option value="price-high">Price (High to Low)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="error-message">
+          ⚠️ {error}
+          <button onClick={fetchProducts} className="retry-btn">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Products Grid */}
+      {filteredProducts.length === 0 ? (
+        <div className="no-products">
+          <div className="no-products-icon">📦</div>
+          <h3>No products found</h3>
+          <p>Try adjusting your search or filter criteria</p>
+          <button 
+            onClick={() => {
+              setSearchTerm("");
+              setSelectedCategory("all");
+              filterProducts("", "all", "name", "asc");
+            }}
+            className="clear-filters-btn"
+          >
+            Clear Filters
+          </button>
+        </div>
+      ) : (
+        <div className="products-grid">
+          {filteredProducts.map((product) => {
+            const priceRange = ResellerProductService.getProductPriceRange(product);
+            const isInStock = ResellerProductService.isProductInStock(product);
+            const availableDenoms = ResellerProductService.getAvailableDenominations(product);
+            const minPrice = ResellerProductService.getProductMinPrice(product);
+            
+            return (
+              <div key={product.id} className="product-card">
+                <div className="product-image-container">
+                  {product.images?.[0]?.url ? (
+                    <img 
+                      src={product.images[0].url} 
+                      alt={product.name}
+                      className="product-image"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' font-family='Arial, sans-serif' font-size='48' text-anchor='middle' dy='.3em' fill='%23666'%3E${product.name.charAt(0)}%3C/text%3E%3C/svg%3E";
+                      }}
+                    />
+                  ) : (
+                    <div className="image-placeholder">
+                      <span>{product.name?.charAt(0)?.toUpperCase() || "P"}</span>
+                    </div>
+                  )}
+                  
+                  {!isInStock && (
+                    <div className="out-of-stock-overlay">
+                      <span>Out of Stock</span>
+                    </div>
+                  )}
+                  
+                  {product.hasDiscount && (
+                    <div className="discount-badge">
+                      <span>Sale</span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="product-info">
+                  <div className="product-header">
+                    <h3 className="product-name">{product.name}</h3>
+                    <span className="product-sku">#{product.sku}</span>
+                  </div>
+                  
+                  <p className="product-description">
+                    {product.description?.substring(0, 100) || "No description available..."}
+                    {product.description?.length > 100 ? "..." : ""}
+                  </p>
+                  
+                  <div className="product-meta">
+                    <span className="product-brand">
+                      <strong>Brand:</strong> {product.brand?.name || "Unknown"}
+                    </span>
+                    
+                    {product.categories && product.categories.length > 0 && (
+                      <span className="product-category">
+                        <strong>Category:</strong> {product.categories[0].name}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="product-pricing">
+                    {priceRange && (
+                      <div className="price-info">
+                        <span className="price-label">Price Range:</span>
+                        <span className="price-range-display">
+                          {formatPrice(priceRange.min, priceRange.currency)}
+                          {priceRange.min !== priceRange.max && ` - ${formatPrice(priceRange.max, priceRange.currency)}`}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="stock-info">
+                      <span className={`stock-status ${isInStock ? "in-stock" : "out-of-stock"}`}>
+                        {isInStock ? "✅ In Stock" : "❌ Out of Stock"}
+                      </span>
+                      <span className="denominations-count">
+                        {availableDenoms.length} denominations available
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="product-actions">
+                    <button 
+                      className={`buy-btn ${!isInStock ? "disabled" : ""}`}
+                      onClick={() => handleBuyClick(product)}
+                      disabled={!isInStock}
+                    >
+                      {isInStock ? `Buy from ${formatPrice(minPrice, product.displayCurrency || "USD")}` : "Out of Stock"}
+                    </button>
+                    
+                    <button 
+                      className="details-btn"
+                      onClick={() => navigate(`/dashboard/products/${product.id}`)}
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+   
+     
     </div>
   );
 }

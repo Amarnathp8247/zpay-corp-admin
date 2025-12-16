@@ -1,23 +1,10 @@
 // src/components/ProtectedRoute.jsx
 import { Navigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useContext } from "react";
+import AuthContext from "../context/AuthContext";
 
 function ProtectedRoute({ children }) {
-  const [loading, setLoading] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
-
-  useEffect(() => {
-    const checkAuth = () => {
-      // Simple check - if token exists in localStorage
-      const token = localStorage.getItem('resellerToken');
-      const isAuthenticated = !!token;
-      
-      setAuthenticated(isAuthenticated);
-      setLoading(false);
-    };
-
-    checkAuth();
-  }, []);
+  const { isAuthenticated, loading } = useContext(AuthContext);
 
   if (loading) {
     return (
@@ -34,7 +21,7 @@ function ProtectedRoute({ children }) {
     );
   }
 
-  if (!authenticated) {
+  if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
 

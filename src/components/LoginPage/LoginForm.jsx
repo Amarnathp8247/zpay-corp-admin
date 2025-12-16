@@ -384,34 +384,7 @@ export default function Login() {
           )}
         </div>
         
-        {/* Debug info (remove in production) */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="debug-info">
-            <p><strong>Debug Info:</strong></p>
-            <p>Email: {email || "Not entered"}</p>
-            <p>OTP Mode: {showOtp ? "Yes" : "No"}</p>
-            <p>Loading: {isLoading ? "Yes" : "No"}</p>
-            <p>Has Token: {localStorage.getItem('resellerToken') ? "Yes" : "No"}</p>
-            <p>Timer: {timer}s ({formatTime(timer)})</p>
-            <button 
-              type="button"
-              className="debug-btn"
-              onClick={() => {
-                // For testing - simulate successful login
-                localStorage.setItem('resellerToken', 'test-token-' + Date.now());
-                localStorage.setItem('resellerProfile', JSON.stringify({ 
-                  email, 
-                  name: "Test User",
-                  companyId: "test-company",
-                  resellerId: "test-reseller" 
-                }));
-                navigate("/");
-              }}
-            >
-              Simulate Login (Dev)
-            </button>
-          </div>
-        )}
+       
       </div>
     </div>
   );

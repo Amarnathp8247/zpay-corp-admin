@@ -48,204 +48,239 @@ class ResellerProductService {
   }
 
   // Helper to handle encrypted responses
-  static async handleResponse(response) {
-    try {
-      console.log('📦 API Response received:', {
-        status: response.status,
-        statusText: response.statusText,
-        encrypted: !!(response.data?.encryptedKey && response.data?.ciphertext && response.data?.iv),
-        hasSuccessField: response.data?.success !== undefined,
-        responseKeys: Object.keys(response.data || {})
-      });
+ // In ResellerProductService.js - update handleResponse method
+static async handleResponse(response) {
+  try {
+    console.log('📦 API Response received:', {
+      status: response.status,
+      statusText: response.statusText,
+      encrypted: !!(response.data?.encryptedKey && response.data?.ciphertext && response.data?.iv),
+      hasSuccessField: response.data?.success !== undefined,
+      responseKeys: Object.keys(response.data || {})
+    });
 
-      // If response already has success=false, return as-is
-      if (response.data?.success === false) {
-        console.log('❌ Response indicates failure, returning as-is');
-        return response.data;
-      }
+    // If response already has success=false, return as-is
+    if (response.data?.success === false) {
+      console.log('❌ Response indicates failure, returning as-is');
+      return response.data;
+    }
 
-      // Check if response is encrypted
-      if (response.data?.encryptedKey && response.data?.ciphertext && response.data?.iv) {
-        console.log('🔐 Received encrypted response structure');
+    // Check if response is encrypted
+    if (response.data?.encryptedKey && response.data?.ciphertext && response.data?.iv) {
+      console.log('🔐 Received encrypted response structure');
+      
+      // CRITICAL: Ensure we have private key for decryption
+      if (!sessionKeys.privateKey) {
+        console.error('❌ NO PRIVATE KEY AVAILABLE for decryption!');
+        console.log('🔄 Attempting to load keys from localStorage...');
         
-        // CRITICAL: Ensure we have private key for decryption
-        if (!sessionKeys.privateKey) {
-          console.error('❌ NO PRIVATE KEY AVAILABLE for decryption!');
-          console.log('🔄 Attempting to load keys from localStorage...');
-          
-          const keys = await loadKeyPair();
-          if (keys) {
-            sessionKeys.privateKey = keys.privateKey;
-            sessionKeys.publicKey = keys.publicKey;
-            console.log('✅ Keys loaded from localStorage');
-          } else {
-            console.error('❌ Failed to load keys from localStorage');
-            throw new Error('Cannot decrypt response: No private key available');
+        const keys = await loadKeyPair();
+        if (keys) {
+          sessionKeys.privateKey = keys.privateKey;
+          sessionKeys.publicKey = keys.publicKey;
+          console.log('✅ Keys loaded from localStorage');
+        } else {
+          console.error('❌ Failed to load keys from localStorage');
+          // Don't throw, return plain data if possible
+          if (response.data?.data) {
+            return {
+              success: response.data.success !== false,
+              ...response.data.data
+            };
+          }
+          return {
+            success: false,
+            error: 'No private key available',
+            message: 'Cannot decrypt response'
+          };
+        }
+      }
+      
+      console.log('🔑 Private key available, attempting decryption...');
+      
+      try {
+        const decryptedData = await decryptServerResponse(response.data, sessionKeys.privateKey);
+        console.log('✅ Decryption successful:', {
+          decryptedType: typeof decryptedData,
+          isObject: typeof decryptedData === 'object',
+          isString: typeof decryptedData === 'string',
+          value: typeof decryptedData === 'string' ? 
+            (decryptedData.length > 100 ? decryptedData.substring(0, 100) + '...' : decryptedData) : 
+            'object'
+        });
+        
+        let parsedData = decryptedData;
+        
+        // If decrypted data is a string, try to parse it as JSON
+        if (typeof decryptedData === 'string') {
+          try {
+            console.log('🔄 Parsing decrypted string as JSON...');
+            // Clean the string first (remove extra quotes, etc.)
+            let cleanString = decryptedData.trim();
+            
+            // Remove surrounding quotes if present
+            if (cleanString.startsWith('"') && cleanString.endsWith('"')) {
+              cleanString = cleanString.substring(1, cleanString.length - 1);
+            }
+            
+            // Unescape JSON string
+            cleanString = cleanString.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            
+            // Try to parse
+            parsedData = JSON.parse(cleanString);
+            console.log('✅ String parsed successfully as JSON');
+          } catch (parseError) {
+            console.warn('⚠️ Failed to parse decrypted string as JSON:', parseError.message);
+            
+            // Try direct JSON parse on original string as fallback
+            try {
+              parsedData = JSON.parse(decryptedData);
+              console.log('✅ Direct JSON parse succeeded');
+            } catch (directParseError) {
+              console.warn('⚠️ Direct JSON parse also failed:', directParseError.message);
+              
+              // If it looks like JSON but has issues, try to fix common problems
+              if (decryptedData.includes('{') && decryptedData.includes('}')) {
+                try {
+                  // Try to fix common JSON issues
+                  const fixedJson = decryptedData
+                    .replace(/\\n/g, '')
+                    .replace(/\\r/g, '')
+                    .replace(/\\t/g, '')
+                    .replace(/\\'/g, "'")
+                    .replace(/\\\\/g, "\\")
+                    .replace(/(\w+):/g, '"$1":')  // Add quotes to property names
+                    .replace(/:\s*'([^']*)'/g, ':"$1"')  // Replace single quotes with double
+                    .replace(/,(\s*[}\]])/g, '$1');  // Remove trailing commas
+                  
+                  parsedData = JSON.parse(fixedJson);
+                  console.log('🔄 Fixed and parsed JSON successfully');
+                } catch (fixError) {
+                  console.error('❌ Failed to fix and parse JSON:', fixError);
+                  // Return as plain data wrapped in success object
+                  parsedData = {
+                    success: true,
+                    data: decryptedData
+                  };
+                }
+              } else {
+                // Not JSON, return as plain data wrapped in success object
+                parsedData = {
+                  success: true,
+                  data: decryptedData
+                };
+              }
+            }
           }
         }
         
-        console.log('🔑 Private key available, attempting decryption...');
+        // At this point, parsedData should be an object
+        if (parsedData && typeof parsedData === 'object') {
+          console.log('📊 Parsed data structure:', {
+            hasSuccessField: 'success' in parsedData,
+            hasDataField: 'data' in parsedData,
+            keys: Object.keys(parsedData)
+          });
+          
+          // Ensure success field exists
+          const result = {
+            success: parsedData.success !== false,
+            ...parsedData
+          };
+          
+          // If parsedData has a data field, flatten it for easier access
+          if (parsedData.data && typeof parsedData.data === 'object') {
+            Object.assign(result, parsedData.data);
+          }
+          
+          console.log('🎯 Final processed result:', {
+            success: result.success,
+            keys: Object.keys(result)
+          });
+          
+          return result;
+        } else {
+          console.error('❌ Invalid parsed data format after processing:', {
+            type: typeof parsedData,
+            value: parsedData
+          });
+          
+          // Return as-is with success flag
+          return {
+            success: true,
+            data: parsedData
+          };
+        }
+      } catch (decryptError) {
+        console.error('❌ Decryption process failed:', {
+          error: decryptError.message,
+          stack: decryptError.stack
+        });
         
-        try {
-          const decryptedData = await decryptServerResponse(response.data, sessionKeys.privateKey);
-          console.log('✅ Decryption successful:', {
-            decryptedType: typeof decryptedData,
-            isObject: typeof decryptedData === 'object',
-            keys: decryptedData ? Object.keys(decryptedData) : 'null'
-          });
-          
-          // Validate and normalize decrypted data
-          if (decryptedData && typeof decryptedData === 'object') {
-            console.log('📊 Decrypted data structure:', {
-              hasDataField: 'data' in decryptedData,
-              hasProductsField: 'products' in decryptedData,
-              hasSuccessField: 'success' in decryptedData
-            });
-            
-            let finalResult = { success: true };
-            
-            // Case 1: decryptedData has data.products
-            if (decryptedData.data && decryptedData.data.products) {
-              console.log('📁 Structure: decryptedData.data.products');
-              finalResult = {
-                success: true,
-                products: decryptedData.data.products,
-                pagination: decryptedData.data.pagination,
-                ...decryptedData.data
-              };
-            }
-            // Case 2: decryptedData has products directly
-            else if (decryptedData.products) {
-              console.log('📁 Structure: decryptedData.products');
-              finalResult = {
-                success: true,
-                products: decryptedData.products,
-                pagination: decryptedData.pagination,
-                ...decryptedData
-              };
-            }
-            // Case 3: decryptedData is the data itself
-            else if (decryptedData.success !== undefined) {
-              console.log('📁 Structure: decryptedData with success field');
-              finalResult = decryptedData;
-            }
-            // Case 4: It's an array (direct list of products)
-            else if (Array.isArray(decryptedData)) {
-              console.log('📁 Structure: Array (direct products list)');
-              finalResult = {
-                success: true,
-                products: decryptedData,
-                pagination: {}
-              };
-            }
-            // Case 5: Empty or unknown structure
-            else {
-              console.warn('⚠️ Unknown decrypted structure, returning as-is');
-              finalResult = {
-                success: true,
-                data: decryptedData,
-                ...decryptedData
-              };
-            }
-            
-            console.log('🎯 Final processed result:', {
-              success: finalResult.success,
-              hasProducts: !!finalResult.products,
-              productsCount: finalResult.products?.length || 0
-            });
-            
-            return finalResult;
-          } else {
-            console.error('❌ Invalid decrypted data format:', {
-              type: typeof decryptedData,
-              value: decryptedData
-            });
-            
-            // Try to parse if it's a string
-            if (typeof decryptedData === 'string') {
-              try {
-                const parsed = JSON.parse(decryptedData);
-                console.log('🔄 Parsed string data:', parsed);
-                return this.handleResponse({ data: parsed });
-              } catch (parseError) {
-                throw new Error(`Invalid decrypted data: String parse failed - ${parseError.message}`);
-              }
-            }
-            
-            throw new Error('Invalid decrypted data format: Expected object');
-          }
-        } catch (decryptError) {
-          console.error('❌ Decryption process failed:', {
-            error: decryptError.message,
-            stack: decryptError.stack
-          });
-          
-          // Check if we have plain data in response
-          if (response.data?.data) {
-            console.log('🔄 Fallback: Using response.data.data');
-            const plainData = response.data.data;
-            return {
-              success: response.data.success !== false,
-              ...(typeof plainData === 'object' ? plainData : { data: plainData })
-            };
-          }
-          
-          // Return error response
+        // Check if we have plain data in response
+        if (response.data?.data) {
+          console.log('🔄 Fallback: Using response.data.data');
+          const plainData = response.data.data;
+          return {
+            success: response.data.success !== false,
+            ...(typeof plainData === 'object' ? plainData : { data: plainData })
+          };
+        }
+        
+        // Try to get any data from response
+        if (response.data) {
           return {
             success: false,
             error: 'Decryption failed',
             message: decryptError.message,
-            encryptedData: response.data
-          };
-        }
-      }
-
-      // Handle plain response
-      console.log('📨 Plain response received');
-      
-      if (response.data && typeof response.data === 'object') {
-        // Ensure success field exists
-        const result = { ...response.data };
-        if (result.success === undefined) {
-          result.success = true;
-        }
-        
-        // Normalize structure for plain responses too
-        if (result.data && result.data.products) {
-          return {
-            success: result.success,
-            products: result.data.products,
-            pagination: result.data.pagination,
-            ...result.data
-          };
-        } else if (result.products) {
-          return {
-            success: result.success,
-            products: result.products,
-            pagination: result.pagination,
-            ...result
+            ...response.data
           };
         }
         
-        return result;
+        // Return error response
+        return {
+          success: false,
+          error: 'Decryption failed',
+          message: decryptError.message,
+          encryptedData: response.data
+        };
       }
-      
-      // If response.data is not an object, wrap it
-      return {
-        success: true,
-        data: response.data
-      };
-      
-    } catch (error) {
-      console.error('❌ handleResponse general error:', error);
-      return {
-        success: false,
-        error: 'Response handling failed',
-        message: error.message,
-        originalResponse: response?.data
-      };
     }
+
+    // Handle plain response
+    console.log('📨 Plain response received');
+    
+    if (response.data && typeof response.data === 'object') {
+      // Ensure success field exists
+      const result = { ...response.data };
+      if (result.success === undefined) {
+        result.success = true;
+      }
+      
+      // If result has data field, merge it for easier access
+      if (result.data && typeof result.data === 'object') {
+        Object.assign(result, result.data);
+      }
+      
+      return result;
+    }
+    
+    // If response.data is not an object, wrap it
+    return {
+      success: response.status >= 200 && response.status < 300,
+      data: response.data
+    };
+    
+  } catch (error) {
+    console.error('❌ handleResponse general error:', error);
+    return {
+      success: false,
+      error: 'Response handling failed',
+      message: error.message,
+      originalResponse: response?.data
+    };
   }
+}
 
   // Get products list
   static async getProductList(filters = {}) {
@@ -712,59 +747,286 @@ class ResellerProductService {
   }
 
   // Get wallet balance
-  static async getWalletBalance() {
-    try {
-      await this.initEncryptionIfNeeded();
-      
-      const response = await apiClient.get('/api/v1/reseller-user/products/wallet/balance', {
-        withCredentials: true
-      });
+ // In ResellerProductService.js
+// In product.service.js - update getWalletBalance method
+static async getWalletBalance() {
+  try {
+    console.log('💰 [ProductService] Fetching wallet balance');
+    
+    // Ensure encryption is initialized
+    await this.initEncryptionIfNeeded();
+    
+    const response = await apiClient.get('/api/v1/reseller-user/products/wallet/balance', {
+      withCredentials: true
+    });
 
-      const result = await this.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to get wallet balance');
-      }
-      
-      const balanceData = result?.data || result;
-      
+    console.log('💰 [ProductService] Raw wallet balance response:', {
+      status: response.status,
+      data: response.data
+    });
+
+    const result = await this.handleResponse(response);
+    
+    console.log('💰 [ProductService] Processed wallet balance result:', {
+      success: result?.success,
+      hasBalance: result?.balance !== undefined,
+      hasData: !!result?.data,
+      result: result
+    });
+    
+    // Handle both old and new structures
+    if (result?.success === false) {
+      console.warn('⚠️ [ProductService] Wallet balance fetch returned success=false:', result);
+      // Return default balance structure
       return {
         success: true,
-        ...balanceData
+        walletId: null,
+        balance: 0,
+        currency: 'USD',
+        currencySymbol: '$',
+        isActive: false,
+        lastUpdated: new Date().toISOString(),
+        recentTransactions: [],
+        summary: {
+          availableBalance: 0,
+          pendingTransactions: 0
+        }
       };
-    } catch (error) {
-      console.error('Get wallet balance error:', error);
-      throw this.handleApiError(error);
     }
+    
+    // Extract balance from different response structures
+    let balanceData;
+    
+    // Case 1: result has data field with balance
+    if (result?.data?.balance !== undefined) {
+      console.log('💰 [ProductService] Structure: result.data with balance');
+      balanceData = result.data;
+    }
+    // Case 2: result has balance at root
+    else if (result?.balance !== undefined) {
+      console.log('💰 [ProductService] Structure: result with balance at root');
+      balanceData = result;
+    }
+    // Case 3: result has data field
+    else if (result?.data) {
+      console.log('💰 [ProductService] Structure: result.data');
+      balanceData = result.data;
+    }
+    // Case 4: result is the balance object
+    else if (result && typeof result === 'object') {
+      console.log('💰 [ProductService] Structure: result is balance object');
+      balanceData = result;
+    }
+    // Case 5: No valid data found
+    else {
+      console.warn('⚠️ [ProductService] No valid balance data found, using defaults');
+      balanceData = {
+        walletId: null,
+        balance: 0,
+        currency: 'USD',
+        currencySymbol: '$',
+        isActive: false,
+        lastUpdated: new Date().toISOString(),
+        recentTransactions: [],
+        summary: {
+          availableBalance: 0,
+          pendingTransactions: 0
+        }
+      };
+    }
+    
+    // Ensure all required fields exist
+    const finalBalance = {
+      success: true,
+      walletId: balanceData.walletId || null,
+      balance: Number(balanceData.balance) || 0,
+      currency: balanceData.currency || 'USD',
+      currencySymbol: balanceData.currencySymbol || '$',
+      isActive: balanceData.isActive !== false,
+      lastUpdated: balanceData.lastUpdated || new Date().toISOString(),
+      recentTransactions: balanceData.recentTransactions || [],
+      summary: {
+        availableBalance: Number(balanceData.balance) || 0,
+        pendingTransactions: balanceData.summary?.pendingTransactions || 
+                            balanceData.recentTransactions?.filter(t => t.status === 'PENDING').length || 0
+      }
+    };
+    
+    console.log('💰 [ProductService] Final wallet balance:', finalBalance);
+    
+    return finalBalance;
+    
+  } catch (error) {
+    console.error('❌ [ProductService] Get wallet balance error:', error);
+    
+    // Always return a valid structure even on error
+    return {
+      success: true,
+      walletId: null,
+      balance: 0,
+      currency: 'USD',
+      currencySymbol: '$',
+      isActive: false,
+      lastUpdated: new Date().toISOString(),
+      recentTransactions: [],
+      summary: {
+        availableBalance: 0,
+        pendingTransactions: 0
+      }
+    };
   }
+}
 
   // Check product availability
-  static async checkProductAvailability(productId, denominationId) {
-    try {
-      await this.initEncryptionIfNeeded();
-      
-      const response = await apiClient.post('/api/v1/reseller-user/products/availability/check', {
-        productId,
-        denominationId
-      }, { withCredentials: true });
+  // In product.service.js - update the checkProductAvailability method
+static async checkProductAvailability(productId, denominationId, resellerId = null, companyId = null) {
+  try {
+    console.log('🔍 Checking availability:', {
+      productId,
+      denominationId,
+      resellerId,
+      companyId
+    });
 
-      const result = await this.handleResponse(response);
-      
-      if (result?.success === false) {
-        throw new Error(result.message || result.error || 'Failed to check product availability');
-      }
-      
-      const availabilityResult = result?.data || result;
-      
-      return {
-        success: true,
-        ...availabilityResult
-      };
-    } catch (error) {
-      console.error('Check product availability error:', error);
-      throw this.handleApiError(error);
+    // Get IDs from localStorage if not provided
+    let finalResellerId = resellerId;
+    let finalCompanyId = companyId;
+    
+    if (!finalResellerId && typeof window !== 'undefined') {
+      finalResellerId = localStorage.getItem('resellerId') || 
+                       localStorage.getItem('userId') || 
+                       localStorage.getItem('resellerUserId');
     }
+    
+    if (!finalCompanyId && typeof window !== 'undefined') {
+      finalCompanyId = localStorage.getItem('companyId') || 
+                      localStorage.getItem('userCompanyId');
+    }
+
+    // If still no IDs, we can't check availability properly
+    if (!finalResellerId || !finalCompanyId) {
+      console.warn('⚠️ Missing resellerId or companyId for availability check');
+      return {
+        available: false,
+        productId,
+        denominationId,
+        stockCount: 0,
+        amount: 0,
+        currency: 'USD',
+        validation: {
+          hasStock: false,
+          hasQuota: false,
+          withinRange: false,
+          canSell: false
+        },
+        message: "User information not available for availability check"
+      };
+    }
+
+    // Prepare request payload
+    const payload = {
+      productId,
+      denominationId,
+      resellerId: finalResellerId,
+      companyId: finalCompanyId
+    };
+
+    console.log('📤 Sending availability check request:', payload);
+
+    // CORRECTED ENDPOINT: /availability/check instead of /check-availability
+    const response = await apiClient.post('/api/v1/reseller-user/products/availability/check', payload, {
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('📥 Availability check response:', {
+      status: response.status,
+      data: response.data
+    });
+
+    const result = await this.handleResponse(response);
+    
+    console.log('✅ Availability check result:', result);
+
+    if (result?.success === false) {
+      console.warn('⚠️ Availability check returned false:', result);
+      return {
+        available: false,
+        productId,
+        denominationId,
+        stockCount: 0,
+        amount: 0,
+        currency: 'USD',
+        resellerQuota: 0,
+        canSell: false,
+        validation: {
+          hasStock: false,
+          hasQuota: false,
+          withinRange: false,
+          canSell: false
+        },
+        message: result.message || result.error || "Product not available"
+      };
+    }
+
+    // Handle different response structures
+    let availabilityData = result?.data || result;
+    
+    if (!availabilityData) {
+      availabilityData = result;
+    }
+
+    // Ensure the response has the expected structure
+    const finalResult = {
+      available: availabilityData.available === true,
+      productId: availabilityData.productId || productId,
+      denominationId: availabilityData.denominationId || denominationId,
+      stockCount: availabilityData.stockCount || 0,
+      amount: availabilityData.amount || 0,
+      currency: availabilityData.currency || 'USD',
+      resellerQuota: availabilityData.resellerQuota || 0,
+      canSell: availabilityData.canSell !== false,
+      priceMarkup: availabilityData.priceMarkup || 0,
+      minQuantity: availabilityData.minQuantity,
+      maxQuantity: availabilityData.maxQuantity,
+      validation: availabilityData.validation || {
+        hasStock: availabilityData.stockCount > 0,
+        hasQuota: (availabilityData.resellerQuota || 0) > 0,
+        withinRange: true,
+        canSell: availabilityData.canSell !== false
+      },
+      message: availabilityData.message || "Availability checked"
+    };
+
+    console.log('🎯 Final availability result:', finalResult);
+    
+    return finalResult;
+
+  } catch (error) {
+    console.error('❌ Error checking availability:', error);
+    
+    // Return a default unavailable response instead of throwing
+    return {
+      available: false,
+      productId,
+      denominationId,
+      stockCount: 0,
+      amount: 0,
+      currency: 'USD',
+      resellerQuota: 0,
+      canSell: false,
+      validation: {
+        hasStock: false,
+        hasQuota: false,
+        withinRange: false,
+        canSell: false
+      },
+      message: error.response?.data?.message || error.message || "Unable to check product availability"
+    };
   }
+}
 
   // Health check
   static async healthCheck() {
@@ -882,16 +1144,42 @@ class ResellerProductService {
     };
   }
 
+  // Add this method to the ResellerProductService class
+static getProductMinPrice(product) {
+  if (!product || !product.denominations || product.denominations.length === 0) {
+    return 0;
+  }
+  
+  // Get available denominations first
+  const availableDenominations = this.getAvailableDenominations(product);
+  
+  if (availableDenominations.length === 0) {
+    return 0;
+  }
+  
+  // Find the minimum price from finalAmount, convertedAmount, or amount
+  const minPrice = availableDenominations.reduce((min, denom) => {
+    const price = denom.finalAmount || denom.convertedAmount || denom.amount || 0;
+    const priceNum = typeof price === 'string' ? parseFloat(price) : price;
+    return priceNum < min ? priceNum : min;
+  }, Infinity);
+  
+  return isFinite(minPrice) ? minPrice : 0;
+}
+
   // Check if product is in stock
   static isProductInStock(product) {
     if (!product?.denominations || product.denominations.length === 0) {
       return false;
     }
     
-    return product.denominations.some(denom => 
-      denom.status === 'ACTIVE' && 
-      (denom.stockCount === undefined || denom.stockCount > 0)
-    );
+    return product.denominations.some(denom => {
+      const isActive = denom.status === 'ACTIVE' || denom.status === undefined;
+      const hasStock = denom.stockCount === undefined || 
+                       denom.stockCount === null || 
+                       denom.stockCount > 0;
+      return isActive && hasStock;
+    });
   }
 
   // Get product stock status
@@ -914,13 +1202,21 @@ class ResellerProductService {
 
   // Get available denominations
   static getAvailableDenominations(product) {
-    if (!product?.denominations) return [];
+    if (!product?.denominations) {
+      return [];
+    }
     
-    return product.denominations.filter(denom => 
-      denom.status === 'ACTIVE' && 
-      (denom.stockCount === undefined || denom.stockCount > 0)
-    );
+    return product.denominations.filter(denom => {
+      const isActive = denom.status === 'ACTIVE' || denom.status === undefined;
+      const hasStock = denom.stockCount === undefined || 
+                       denom.stockCount === null || 
+                       denom.stockCount > 0;
+      const hasAmount = denom.amount || denom.finalAmount || denom.convertedAmount;
+      
+      return isActive && hasStock && hasAmount;
+    });
   }
+  
 
   // Get product by SKU
   static findProductBySku(products, sku) {

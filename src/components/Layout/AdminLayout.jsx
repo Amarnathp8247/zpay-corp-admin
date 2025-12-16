@@ -44,11 +44,7 @@ function AdminLayout() {
       label: "Orders",
       icon: <FiShoppingCart />,
       path: "/dashboard/orders",
-      subItems: [
-        { id: "all-orders", label: "All Orders", icon: <FiList />, path: "/dashboard/orders" },
-        { id: "pending", label: "Pending", icon: <FiClock />, path: "/dashboard/orders/pending" },
-        { id: "completed", label: "Completed", icon: <FiCheckCircle />, path: "/dashboard/orders/completed" },
-      ],
+     
     },
     {
       id: "profile",
