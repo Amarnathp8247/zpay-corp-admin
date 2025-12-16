@@ -1,0 +1,151 @@
+/* src/pages/OrdersPage.css */
+.orders-page {
+    min-height: 100vh;
+    /* background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); */
+    padding: 20px 0;
+  }
+  
+  .orders-page .MuiContainer-root {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+    margin-top: 20px;
+    margin-bottom: 40px;
+  }
+  
+  /* Table styles */
+  .orders-page .MuiTable-root {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  
+  .orders-page .MuiTableHead-root {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  }
+  
+  .orders-page .MuiTableHead-root .MuiTableCell-head {
+    color: white;
+    font-weight: 600;
+    border-bottom: none;
+  }
+  
+  .orders-page .MuiTableRow-root:hover {
+    background-color: rgba(102, 126, 234, 0.04);
+  }
+  
+  /* Card hover effects */
+  .orders-page .MuiCard-root {
+    transition: all 0.3s ease;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+  
+  .orders-page .MuiCard-root:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+    border-color: rgba(102, 126, 234, 0.3);
+  }
+  
+  /* Status chips */
+  .orders-page .MuiChip-root {
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.7rem;
+  }
+  
+  /* Tabs styling */
+  .orders-page .MuiTabs-root {
+    border-radius: 12px;
+    background: rgba(102, 126, 234, 0.04);
+    padding: 4px;
+  }
+  
+  .orders-page .MuiTab-root {
+    border-radius: 8px;
+    margin: 0 4px;
+    transition: all 0.3s ease;
+  }
+  
+  .orders-page .MuiTab-root.Mui-selected {
+    background: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Dialog styling */
+  .orders-page .MuiDialog-paper {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  
+  .orders-page .MuiDialogTitle-root {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    color: white;
+  }
+  
+  /* Animation for expanding rows */
+  .orders-page .MuiCollapse-root {
+    animation: slideDown 0.3s ease;
+  }
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* Loading animation */
+  @keyframes pulse {
+    0% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.6;
+    }
+  }
+  
+  .orders-page .MuiCircularProgress-root {
+    animation: pulse 2s infinite;
+  }
+  
+  /* Print styles */
+  @media print {
+    .orders-page .MuiContainer-root {
+      box-shadow: none;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .orders-page .MuiPaper-root {
+      box-shadow: none;
+    }
+    
+    .no-print {
+      display: none !important;
+    }
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .orders-page .MuiContainer-root {
+      padding: 16px;
+    }
+    
+    .orders-page .MuiTableContainer-root {
+      overflow-x: auto;
+    }
+    
+    .orders-page .MuiTableCell-root {
+      padding: 8px;
+    }
+  }
+  
+ 
